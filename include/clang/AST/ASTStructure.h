@@ -50,6 +50,27 @@ public:
   /// about its structure in the newly created ASTStructure object.
   explicit ASTStructure(ASTContext& Context);
 
+  struct HashSearchResult {
+    unsigned Hash;
+    bool Success;
+  };
+
+  HashSearchResult findHash(const Decl *D) {
+    auto I = HashedDecls.find(D);
+    if (I == HashedDecls.end()) {
+      return {0, false};
+    }
+    return {I->second, true};
+  }
+
+  HashSearchResult findHash(const Stmt *S) {
+    auto I = HashedStmts.find(S);
+    if (I == HashedStmts.end()) {
+      return {0, false};
+    }
+    return {I->second, true};
+  }
+
   unsigned getHash(const Decl *D) {
     auto I = HashedDecls.find(D);
     if (I == HashedDecls.end()) {

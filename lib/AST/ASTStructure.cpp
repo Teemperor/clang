@@ -15,6 +15,8 @@
 #include <clang/AST/RecursiveASTVisitor.h>
 #include <clang/AST/ASTContext.h>
 
+#include <iostream>
+
 using namespace clang;
 
 namespace {
@@ -34,6 +36,22 @@ namespace {
 
     bool shouldTraversePostOrder() const { return true; }
 
+    // Returns true if the SourceLocation is expanded from any macro body.
+    // Returns false if the SourceLocation is invalid, is from not in a macro
+    // expansion, or is from expanded from a top-level macro argument.
+    static bool IsInAnyMacroBody(const SourceManager &SM, SourceLocation Loc) {
+      if (Loc.isInvalid())
+        return false;
+
+      while (Loc.isMacroID()) {
+        if (SM.isMacroBodyExpansion(Loc))
+          return true;
+        Loc = SM.getImmediateMacroCallerLoc(Loc);
+      }
+
+      return false;
+    }
+
     bool PostVisitStmt(Stmt *S) {
       finishHash();
 
@@ -41,14 +59,18 @@ namespace {
       Hash = 0;
       ClassHash = S->getStmtClass();
 
+      if (IsInAnyMacroBody(Context.getSourceManager(), S->getLocStart())) {
+        return skip();
+      }
+
       for (Stmt *Child : S->children()) {
         if (Child == nullptr) {
-          calcHash(251);
-        } else if (Child->getSourceRange().isInvalid()) {
-          calcHash(569);
-        } else {
-          calcHash(Child);
-        }
+            calcHash(251);
+          } else if (Child->getSourceRange().isInvalid()) {
+            calcHash(569);
+          } else {
+            calcHash(Child);
+          }
       }
 
       return true;
@@ -60,6 +82,9 @@ namespace {
       CurrentDecl = D;
       if (D->isImplicit())
         return skip();
+      if (IsInAnyMacroBody(Context.getSourceManager(), D->getLocation())) {
+        return skip();
+      }
 
       Hash = D->getKind();
 
@@ -102,13 +127,21 @@ namespace {
     }
 
     void calcHash(Decl *D) {
-      unsigned I = SH.getHash(D);
-      calcHash(I);
+      auto I = SH.findHash(D);
+      if (I.Success) {
+        calcHash(I.Hash);
+      } else {
+        skip();
+      }
     }
 
     void calcHash(Stmt *S) {
-      unsigned I = SH.getHash(S);
-      calcHash(I);
+      auto I = SH.findHash(S);
+      if (I.Success) {
+        calcHash(I.Hash);
+      } else {
+        skip();
+      }
     }
 
     void calcHash(QualType QT) {
@@ -179,9 +212,26 @@ namespace {
 
   // TODO: misc stmts
   DEF_STMT_VISIT(AsmStmt, {})
-  DEF_STMT_VISIT(GCCAsmStmt, {})
+  DEF_STMT_VISIT(GCCAsmStmt, {
+                   calcHash(S->isVolatile());
+                   calcHash(S->isSimple());
+                   calcHash(S->getAsmString());
+                   calcHash(S->getNumOutputs());
+                   for (unsigned I = 0, N = S->getNumOutputs(); I != N; ++I) {
+                     calcHash(S->getOutputName(I));
+                     VisitStringLiteral(S->getOutputConstraintLiteral(I));
+                   }
+                   calcHash(S->getNumInputs());
+                   for (unsigned I = 0, N = S->getNumInputs(); I != N; ++I) {
+                     calcHash(S->getInputName(I));
+                     calcHash(S->getInputConstraintLiteral(I));
+                   }
+                   calcHash(S->getNumClobbers());
+                   for (unsigned I = 0, N = S->getNumClobbers(); I != N; ++I)
+                     calcHash(S->getClobberStringLiteral(I));})
   DEF_STMT_VISIT(MSAsmStmt, {})
-  DEF_STMT_VISIT(CXXForRangeStmt, {})
+  DEF_STMT_VISIT(CXXForRangeStmt, {
+                 })
   DEF_STMT_VISIT(CapturedStmt, {})
   DEF_STMT_VISIT(CoreturnStmt, {})
   DEF_STMT_VISIT(CoroutineBodyStmt, {})
@@ -405,7 +455,9 @@ namespace {
                      calcHash(S->getConditionVariable());
                  })
   DEF_STMT_VISIT(IndirectGotoStmt, {})
-  DEF_STMT_VISIT(LabelStmt, {})
+  DEF_STMT_VISIT(LabelStmt, {
+                   //TODO calcHash(S->getDecl()->getName());
+                 })
   DEF_STMT_VISIT(MSDependentExistsStmt, {})
 
   DEF_STMT_VISIT(SEHExceptStmt, {})
@@ -565,3 +617,4 @@ ASTStructure::ASTStructure(ASTContext& Context) {
   StructuralHashVisitor visitor(*this, Context);
   visitor.TraverseDecl(Context.getTranslationUnitDecl());
 }
+

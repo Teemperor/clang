@@ -18,6 +18,75 @@
 
 using namespace clang;
 
+
+class FindNamedDecl : public RecursiveASTVisitor<FindNamedDecl> {
+  std::string DeclarationName;
+  NamedDecl *FoundNamedDecl = nullptr;
+public:
+  FindNamedDecl(const std::string& DeclarationName)
+    : DeclarationName(DeclarationName) {
+  }
+
+  NamedDecl *getDecl() {
+    return FoundNamedDecl;
+  }
+
+  bool VisitNamedDecl(NamedDecl *D) {
+    if (D->getQualifiedNameAsString() == DeclarationName) {
+      FoundNamedDecl = D;
+      return false;
+    }
+    return true;
+  }
+};
+
+bool isHashed(const std::string& DeclName, const std::string& code) {
+  auto ASTUnit = tooling::buildASTFromCode(code);
+  ASTContext& ASTContext = ASTUnit->getASTContext();
+
+  auto Hash = ASTStructure(ASTUnit->getASTContext());
+
+  FindNamedDecl Finder(DeclName);
+  Finder.TraverseTranslationUnitDecl(ASTContext.getTranslationUnitDecl());
+
+  assert(Finder.getDecl());
+  return Hash.findHash(Finder.getDecl()).Success;
+}
+
+class FindStmt : public RecursiveASTVisitor<FindStmt> {
+  Stmt::StmtClass NeededStmtClass;
+  Stmt *FoundStmt = nullptr;
+public:
+  FindStmt(Stmt::StmtClass NeededStmtClass)
+    : NeededStmtClass(NeededStmtClass) {
+  }
+
+  Stmt *getStmt() {
+    return FoundStmt;
+  }
+
+  bool VisitStmt(Stmt *S) {
+    if (S->getStmtClass() == NeededStmtClass) {
+      FoundStmt = S;
+      return false;
+    }
+    return true;
+  }
+};
+
+bool isHashed(Stmt::StmtClass NeededStmtClass, const std::string& code) {
+  auto ASTUnit = tooling::buildASTFromCode(code);
+  ASTContext& ASTContext = ASTUnit->getASTContext();
+
+  auto Hash = ASTStructure(ASTUnit->getASTContext());
+
+  FindStmt Finder(NeededStmtClass);
+  Finder.TraverseTranslationUnitDecl(ASTContext.getTranslationUnitDecl());
+
+  assert(Finder.getStmt());
+  return Hash.findHash(Finder.getStmt()).Success;
+}
+
 bool compareStructure(const std::string& DeclNameA,
                       const std::string& DeclNameB,
                       const std::string& codeA,
@@ -54,7 +123,16 @@ bool compareStructure(const std::string& DeclNameA,
 }
 
 
+bool compareStmt(const std::string& codeA,
+                 const std::string& codeB) {
+  return compareStructure("x", "x",
+                          "void x() { " + codeA + "}",
+                          "void x() { " + codeB + "}");
+}
+
 TEST(ASTStructure, InheritMembers) {
+  // Test that inheriting from classes
+  // with same hash results is detected
   ASSERT_TRUE(compareStructure("D1", "D2",
       "class B1 { int x1; int y1; };\n"
       "class D1 : public B1 { };",
@@ -62,6 +140,8 @@ TEST(ASTStructure, InheritMembers) {
       "class B2 { int x2; int y2; };\n"
       "class D2 : public B2 { };"
   ));
+  // Inherting from classes with different
+  // hashes shouldn't result in copy-paste
   ASSERT_FALSE(compareStructure("D1", "D2",
       "class B1 { int x2; };\n"
       "class D1 : public B1 { };",
@@ -89,6 +169,8 @@ TEST(ASTStructure, InheritFunctions) {
 }
 
 TEST(ASTStructure, VariadicFunctions) {
+  // Test that variadic functions and non variadic functions are
+  // distinguished
   ASSERT_FALSE(compareStructure("x", "x",
       "void x(...) { }",
       "void x() { }"
@@ -124,147 +206,161 @@ TEST(ASTStructure, VirtualFunctions) {
 }
 
 TEST(ASTStructure, IfStmt) {
-  ASSERT_TRUE(compareStructure("x", "x",
-      "void x() { if (true) {} }",
-      "void x() { if (false) {} }"
+  ASSERT_TRUE(compareStmt(
+      "if (true) {}",
+      "if (false) {}"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { if (true) { int x; } }",
-      "void x() { if (false) {} }"
+  ASSERT_FALSE(compareStmt(
+      "if (true) { int x; }",
+      "if (false) {}"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { if (int y = 0) {} }",
-      "void x() { if (false) {} }"
+  ASSERT_FALSE(compareStmt(
+      "if (int y = 0) {}",
+      "if (false) {}"
   ));
 }
 
 TEST(ASTStructure, DeclStmt) {
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { int y = 0; }",
-      "void x() { int y = (1 + 1); }"
+  ASSERT_FALSE(compareStmt(
+      "int y = 0;",
+      "int y = (1 + 1);"
   ));
 }
 
 TEST(ASTStructure, ArraySubscriptExpr) {
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { int i[2]; i[1] = 0; }",
-      "void x() { int i[2]; i[1 + 0] = 0; }"
+  ASSERT_FALSE(compareStmt(
+      "int i[2]; i[1] = 0;",
+      "int i[2]; i[1 + 0] = 0;"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { int i[2]; (1)[i] = 0; }",
-      "void x() { int i[2]; (1 + 0)[i] = 0; }"
+  ASSERT_FALSE(compareStmt(
+      "int i[2]; (1)[i] = 0;",
+      "int i[2]; (1 + 0)[i] = 0;"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { int i[2]; (i)[1 + 0] = 0; }",
-      "void x() { int i[2]; (1 + 0)[i] = 0; }"
+  ASSERT_FALSE(compareStmt(
+      "int i[2]; (i)[1 + 0] = 0;",
+      "int i[2]; (1 + 0)[i] = 0;"
   ));
 }
 
 TEST(ASTStructure, ConditionalOperator) {
-  ASSERT_TRUE(compareStructure("x", "x",
-      "void x() { int y = true ? 1 : 0; }",
-      "void x() { int x = false ? 0 : 1; }"
+  ASSERT_TRUE(compareStmt(
+      "int y = true ? 1 : 0;",
+      "int x = false ? 0 : 1;"
   ));
   // first operand different
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { int y = true == true ? 1 : 0; }",
-      "void x() { int y = false ? 1 : 0; }"
+  ASSERT_FALSE(compareStmt(
+      "int y = true == true ? 1 : 0;",
+      "int y = false ? 1 : 0;"
   ));
   // second operand different
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { int y = true ? 1 : 0; }",
-      "void x() { int y = true ? 1 + 1 : 0; }"
+  ASSERT_FALSE(compareStmt(
+      "int y = true ? 1 : 0;",
+      "int y = true ? 1 + 1 : 0;"
   ));
   // third operand different
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { int y = true ? 1 : 0; }",
-      "void x() { int y = true ? 1 : 0 + 0; }"
+  ASSERT_FALSE(compareStmt(
+      "int y = true ? 1 : 0;",
+      "int y = true ? 1 : 0 + 0;"
   ));
 
   // Check GNU version
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { int y = 1 ? : 0; }",
-      "void x() { int y = 1 ? : 0 + 0; }"
+  ASSERT_FALSE(compareStmt(
+      "int y = 1 ? : 0;",
+      "int y = 1 ? : 0 + 0;"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { int y = 1 ? : 0; }",
-      "void x() { int y = 1 + 1 ? : 0; }"
+  ASSERT_FALSE(compareStmt(
+      "int y = 1 ? : 0;",
+      "int y = 1 + 1 ? : 0;"
   ));
 }
 
 TEST(ASTStructure, CXXTryStmt) {
-  ASSERT_TRUE(compareStructure("x", "x",
-      "void x() { try { int x; } catch (int x) {} }",
-      "void x() { try { int y; } catch (int x) {} }"
+  ASSERT_TRUE(compareStmt(
+      "try { int x; } catch (int x) {}",
+      "try { int y; } catch (int x) {}"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { try { int x; } catch (int x) {} }",
-      "void x() { try { } catch (int x) {} }"
+  ASSERT_FALSE(compareStmt(
+      "try { int x; } catch (int x) {}",
+      "try { } catch (int x) {}"
   ));
 }
 
 TEST(ASTStructure, DoStmt) {
-  ASSERT_TRUE(compareStructure("x", "x",
-      "void x() { do { int x; } while (true); }",
-      "void x() { do { int y; } while (false); }"
+  ASSERT_TRUE(compareStmt(
+      "do { int x; } while (true);",
+      "do { int y; } while (false);"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { do { int x; } while (true); }",
-      "void x() { do { } while (true); }"
+  ASSERT_FALSE(compareStmt(
+      "do { int x; } while (true);",
+      "do { } while (true);"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { int v; do { int x; } while ((v = 1)); }",
-      "void x() { int v; do { int y; } while (true); }"
+  ASSERT_FALSE(compareStmt(
+      "int v; do { int x; } while ((v = 1));",
+      "int v; do { int y; } while (true);"
   ));
 }
 
 TEST(ASTStructure, CompoundStmt) {
-  ASSERT_TRUE(compareStructure("x", "x",
-      "void x() { int x; }",
-      "void x() { int x; }"
+  ASSERT_TRUE(compareStmt(
+      "int x;",
+      "int x;"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { int x; }",
-      "void x() { int x; int y; }"
+  ASSERT_FALSE(compareStmt(
+      "int x;",
+      "int x; int y;"
   ));
 }
 
-TEST(ASTStructure, WhileStmt) {
+/*TEST(ASTStructure, Labels) {
   ASSERT_TRUE(compareStructure("x", "x",
-      "void x() { while (true) { int x; } }",
-      "void x() { while (false) { int y; } }"
+      "void x() { lbl: goto lbl; }",
+      "void x() { lbl: goto lbl; }"
   ));
   ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { while (true) { int x; } }",
-      "void x() { while (false) { } }"
+      "void x() { lbl: goto lbl; }",
+      "void x() { lbl2: goto lbl2; }"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { int v; while ((v = 0)) { int x; } }",
-      "void x() { int v; while (false) { int y; } }"
+}*/
+
+
+// TODO test asm
+
+TEST(ASTStructure, WhileStmt) {
+  ASSERT_TRUE(compareStmt(
+      "while (true) { int x; }",
+      "while (false) { int y; }"
+  ));
+  ASSERT_FALSE(compareStmt(
+      "while (true) { int x; }",
+      "while (false) { }"
+  ));
+  ASSERT_FALSE(compareStmt(
+      "int v; while ((v = 0)) { int x; }",
+      "int v; while (false) { int y; }"
   ));
 }
 
 TEST(ASTStructure, NumberLiterals) {
-  ASSERT_TRUE(compareStructure("x", "x",
-      "void x() { double x = 1; }",
-      "void x() { double x = 1l; }"
+  ASSERT_TRUE(compareStmt(
+      "double x = 1;",
+      "double x = 1l;"
   ));
-  ASSERT_TRUE(compareStructure("x", "x",
-      "void x() { double x = 1u; }",
-      "void x() { double x = 1l; }"
+  ASSERT_TRUE(compareStmt(
+      "double x = 1u;",
+      "double x = 1l;"
   ));
-  ASSERT_TRUE(compareStructure("x", "x",
-      "void x() { double x = 1.0; }",
-      "void x() { long x = 1l; }"
+  ASSERT_TRUE(compareStmt(
+      "double x = 1.0;",
+      "long x = 1l;"
   ));
-  ASSERT_TRUE(compareStructure("x", "x",
-      "void x() { double x = 1.0f; }",
-      "void x() { double x = 1l; }"
+  ASSERT_TRUE(compareStmt(
+      "double x = 1.0f;",
+      "double x = 1l;"
   ));
 }
 
 TEST(ASTStructure, AtomicExpr) {
-  ASSERT_TRUE(compareStructure("x", "x",
+  /*ASSERT_TRUE(compareStructure("x", "x",
       "void x() { int i[2]; __atomic_store_n(i, 1, __ATOMIC_RELAXED); }",
       "void x() { int j[2]; __atomic_store_n(j, 1, __ATOMIC_RELAXED); }"
   ));
@@ -279,7 +375,7 @@ TEST(ASTStructure, AtomicExpr) {
   ASSERT_FALSE(compareStructure("x", "x",
       "void x() { int i[2]; __atomic_exchange_n(i, 1, __ATOMIC_RELAXED); }",
       "void x() { int i[2]; __atomic_store_n   (i, 1, __ATOMIC_RELAXED); }"
-  ));
+  )); */
 }
 
 TEST(ASTStructure, BinaryOperator) {
@@ -316,8 +412,8 @@ TEST(ASTStructure, Casting) {
       "int x() { return static_cast<long>(1); }"
   ));
   ASSERT_FALSE(compareStructure("x", "x",
-      "int *x() { int i[2]; return static_cast<int *>(i); }",
-      "int *x() { const int i[2]; return const_cast<int *>(i); }"
+      "int i[2] = {0, 0}; int *x() { return static_cast<int *>(i); }",
+      "const int i[2] = {0, 0}; int *x() { return const_cast<int *>(i); }"
   ));
   ASSERT_FALSE(compareStructure("x", "x",
       "int x() { return static_cast<unsigned>(1); }",
@@ -330,24 +426,39 @@ TEST(ASTStructure, Casting) {
 }
 
 TEST(ASTStructure, CXXCatchStmt) {
-  ASSERT_TRUE(compareStructure("x", "x",
-      "void x() { try {} catch (long x) {} }",
-      "void x() { try {} catch (int x) {} }"
+  ASSERT_TRUE(compareStmt(
+      "try {} catch (long x) {}",
+      "try {} catch (int x) {}"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { try {} catch (...) { int x; } }",
-      "void x() { try {} catch (...) {} }"
+  ASSERT_FALSE(compareStmt(
+      "try {} catch (...) { int x; }",
+      "try {} catch (...) {}"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { try {} catch (int x) {} }",
-      "void x() { try {} catch (...) {} }"
+  ASSERT_FALSE(compareStmt(
+      "try {} catch (int x) {}",
+      "try {} catch (...) {}"
   ));
 }
 
-TEST(ASTStructure, FunctionTemplates) {
+TEST(ASTStructure, FunctionTemplate) {
+  ASSERT_TRUE(compareStructure("y", "x",
+      "template <class T> void y() { }",
+      "template <class V> void x() { }"
+  ));
   ASSERT_FALSE(compareStructure("x", "x",
       "template <class T> void x() { }",
       "template <class T, class T2> void x() { }"
+  ));
+}
+
+TEST(ASTStructure, ClassTemplate) {
+  ASSERT_TRUE(compareStructure("X", "X",
+      "template <class T> class X { T member; };",
+      "template <class T> class X { T member; };"
+  ));
+  ASSERT_FALSE(compareStructure("X", "X",
+      "template <class T> class X { T member; };",
+      "template <class T, class T2> class X { T member; };"
   ));
 }
 
@@ -386,14 +497,13 @@ TEST(ASTStructure, ForStmt) {
       "}"
   ));
 
-  ASSERT_FALSE(compareStructure("A", "A",
-      "void A() { for (int i = 0; i < 100; i++) { i++; } }",
-
-      "void A() { for (int j = 0; j < 100; j++) { } }"
+  ASSERT_FALSE(compareStmt(
+      "for (int i = 0; i < 100; i++) { i++; }",
+      "for (int j = 0; j < 100; j++) { }"
   ));
 }
 
-// Tests from GSoC 2015
+// Imported tests from the related GSoC 2015 project
 
 TEST(ASTStructure, GSoC2015CompoundStmt) {
   ASSERT_TRUE(compareStructure("x", "x",
@@ -491,47 +601,83 @@ TEST(ASTStructure, CompoundStmtLocal) {
   ));
 }
 
+// Macro tests
+
+TEST(ASTStructure, MacroTest) {
+  ASSERT_TRUE(isHashed(Stmt::StmtClass::DoStmtClass,
+      R"test(
+      #define GTEST1(Code) void foo() { Code }
+      #define GTEST2(Code) GTEST1({ int gtest_var; Code })
+      GTEST2({
+        do {
+          int i = 0;
+          int j = 2;
+        } while(0);
+      })
+      )test"
+  ));
+  ASSERT_FALSE(isHashed("foo",
+      R"test(
+      #define GTEST1(Code) void foo() { Code }
+      #define GTEST2(Code) GTEST1({ while(false){} int gtest_var; Code })
+      GTEST2({
+        do {
+          int i = 0;
+          int j = 2;
+        } while(0);
+      })
+      )test"
+  ));
+  ASSERT_FALSE(isHashed(Stmt::StmtClass::WhileStmtClass,
+      R"test(
+      #define GTEST1(Code) void foo() { Code }
+      #define GTEST2(Code) GTEST1({ while(false){} Code })
+      GTEST2({})
+      )test"
+  ));
+}
+
 // Use case tests
 
 TEST(ASTStructure, ImageTest) {
   ASSERT_TRUE(compareStructure("testWidthRanges", "testHeightRanges",
-    "struct Image {\n"
-    "  int width() { return 0; }\n"
-    "  int height() { return 0; }\n"
-    "  void setWidth(int x) {}\n"
-    "  void setHeight(int y) {}\n"
-    "};"
-    "void assert(bool);\n"
-    "void testWidthRanges() {"
-    "  Image img;"
-    "  img.setWidth(0);"
-    "  assert(img.width() == 0);"
-    "  img.setWidth(1);"
-    "  assert(img.width() == 1);"
-    "  try { "
-    "    img.setWidth(-1);"
-    "    assert(false); "
-    "  } catch (...) { }"
-    "}",
+    R"test(struct Image {
+      int width() { return 0; }
+      int height() { return 0; }
+      void setWidth(int x) {}
+      void setHeight(int y) {}
+    };
+    void assert(bool);
+    void testWidthRanges() {
+      Image img;
+      img.setWidth(0);
+      assert(img.width() == 0);
+      img.setWidth(1);
+      assert(img.width() == 1);
+      try {
+        img.setWidth(-1);
+        assert(false);
+      } catch (...) { }
+    })test",
 
-    "struct Image {\n"
-    "  int width() { return 0; }\n"
-    "  int height() { return 0; }\n"
-    "  void setWidth(int x) {}\n"
-    "  void setHeight(int y) {}\n"
-    "};"
-    "void assert(bool);\n"
-    "void testHeightRanges() {\n"
-    "  Image img;\n"
-    "  img.setHeight(0);\n"
-    "  assert(img.height() == 0);\n"
-    "  img.setHeight(1);\n"
-    "  assert(img.height() == 1);\n"
-    "  try {\n"
-    "    img.setWidth(-1);\n"
-    "    assert(false);\n"
-    "  } catch (...) { }\n"
-    "}\n"
+    R"test(struct Image {
+      int width() { return 0; }
+      int height() { return 0; }
+      void setWidth(int x) {}
+      void setHeight(int y) {}
+    };
+    void assert(bool);
+    void testHeightRanges() {
+      Image img;
+      img.setHeight(0);
+      assert(img.height() == 0);
+      img.setHeight(1);
+      assert(img.height() == 1);
+      try {
+        img.setWidth(-1);
+        assert(false);
+      } catch (...) { }
+    })test"
   ));
 
 
