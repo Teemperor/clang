@@ -91,8 +91,10 @@ bool compareStructure(const std::string& DeclNameA,
                       const std::string& DeclNameB,
                       const std::string& codeA,
                       const std::string& codeB) {
-  auto ASTUnitA = tooling::buildASTFromCode(codeA);
-  auto ASTUnitB = tooling::buildASTFromCode(codeB);
+  auto ASTUnitA = tooling::buildASTFromCodeWithArgs(codeA,
+      {"-std=c++1z", "-fms-extensions"});
+  auto ASTUnitB = tooling::buildASTFromCodeWithArgs(codeB,
+      {"-std=c++1z", "-fms-extensions"});
 
   auto HashA = ASTStructure(ASTUnitA->getASTContext());
   auto HashB = ASTStructure(ASTUnitB->getASTContext());
@@ -110,7 +112,11 @@ bool compareStructure(const std::string& DeclNameA,
               if (NamedDB->getNameAsString() == DeclNameB) {
                 // If we have both declarations, compare
                 // their hashes
-                return HashA.getHash(DA) == HashB.getHash(DB);
+                auto HashSearchA = HashA.findHash(DA);
+                auto HashSearchB = HashB.findHash(DB);
+                assert(HashSearchA.Success);
+                assert(HashSearchB.Success);
+                return HashSearchA.Hash == HashSearchB.Hash;
               }
             }
           }
@@ -119,7 +125,7 @@ bool compareStructure(const std::string& DeclNameA,
   }
   // We couldn't find the two specified declarations, so we abort
   // fail the whole test.
-  assert(false);
+  assert("Couldn't find specified delcarations");
 }
 
 
@@ -220,6 +226,42 @@ TEST(ASTStructure, IfStmt) {
   ));
 }
 
+TEST(ASTStructure, StmtExpr) {
+  ASSERT_TRUE(compareStmt(
+      "int v = ({int x = 4; x;});",
+      "int v = ({int y = 5; y;});"
+  ));
+  ASSERT_FALSE(compareStmt(
+      "int v = ({int x = 4 + 4; x;});",
+      "int v = ({int y = 5; y;});"
+  ));
+  ASSERT_FALSE(compareStmt(
+      "int v = ({int x = 5; x;});",
+      "int v = ({int y = 5; y++; y;});"
+  ));
+}
+
+
+TEST(ASTStructure, MSDependentExistsStmt) {
+  ASSERT_FALSE(compareStructure("x", "x",
+      R"test(
+      template<typename T>
+      void x(T &t) {
+        __if_exists (T::foo) {
+        }
+      }
+      )test",
+
+      R"test(
+      template<typename T>
+      void x(T &t) {
+        __if_not_exists (T::foo) {
+        }
+      }
+      )test"
+  ));
+}
+
 TEST(ASTStructure, DeclStmt) {
   ASSERT_FALSE(compareStmt(
       "int y = 0;",
@@ -311,17 +353,16 @@ TEST(ASTStructure, CompoundStmt) {
   ));
 }
 
-/*TEST(ASTStructure, Labels) {
-  ASSERT_TRUE(compareStructure("x", "x",
-      "void x() { lbl: goto lbl; }",
-      "void x() { lbl: goto lbl; }"
+TEST(ASTStructure, Labels) {
+  ASSERT_TRUE(compareStmt(
+      "lbl: goto lbl;",
+      "lbl: goto lbl;"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { lbl: goto lbl; }",
-      "void x() { lbl2: goto lbl2; }"
+  ASSERT_FALSE(compareStmt(
+      "lbl: goto lbl;",
+      "lbl2: goto lbl2;"
   ));
-}*/
-
+}
 
 // TODO test asm
 
@@ -360,22 +401,22 @@ TEST(ASTStructure, NumberLiterals) {
 }
 
 TEST(ASTStructure, AtomicExpr) {
-  /*ASSERT_TRUE(compareStructure("x", "x",
-      "void x() { int i[2]; __atomic_store_n(i, 1, __ATOMIC_RELAXED); }",
-      "void x() { int j[2]; __atomic_store_n(j, 1, __ATOMIC_RELAXED); }"
+  ASSERT_TRUE(compareStmt(
+      "int i[2]; __atomic_store_n(i, 1, __ATOMIC_RELAXED);",
+      "int j[2]; __atomic_store_n(j, 1, __ATOMIC_RELAXED);"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { int i[2]; __atomic_store_n(i, 1, __ATOMIC_RELAXED); }",
-      "void x() { int i[2]; __atomic_store_n(i + 1, 1, __ATOMIC_RELAXED); }"
+  ASSERT_FALSE(compareStmt(
+      "int i[2]; __atomic_store_n(i, 1, __ATOMIC_RELAXED);",
+      "int i[2]; __atomic_store_n(i + 1, 1, __ATOMIC_RELAXED);"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { int i[2]; __atomic_store_n(i, 1, __ATOMIC_RELAXED); }",
-      "void x() { int i[2]; __atomic_store_n(i, 1 + 1, __ATOMIC_RELAXED); }"
+  ASSERT_FALSE(compareStmt(
+      "int i[2]; __atomic_store_n(i, 1, __ATOMIC_RELAXED);",
+      "int i[2]; __atomic_store_n(i, 1 + 1, __ATOMIC_RELAXED);"
   ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x() { int i[2]; __atomic_exchange_n(i, 1, __ATOMIC_RELAXED); }",
-      "void x() { int i[2]; __atomic_store_n   (i, 1, __ATOMIC_RELAXED); }"
-  )); */
+  ASSERT_FALSE(compareStmt(
+      "int i[2]; __atomic_exchange_n(i, 1, __ATOMIC_RELAXED);",
+      "int i[2]; __atomic_store_n   (i, 1, __ATOMIC_RELAXED);"
+  ));
 }
 
 TEST(ASTStructure, BinaryOperator) {
@@ -503,6 +544,43 @@ TEST(ASTStructure, ForStmt) {
   ));
 }
 
+
+// Macro tests
+
+TEST(ASTStructure, MacroTest) {
+  ASSERT_TRUE(isHashed(Stmt::StmtClass::DoStmtClass,
+      R"test(
+      #define GTEST1(Code) void foo() { Code }
+      #define GTEST2(Code) GTEST1({ int gtest_var; Code })
+      GTEST2({
+        do {
+          int i = 0;
+          int j = 2;
+        } while(0);
+      })
+      )test"
+  ));
+  ASSERT_FALSE(isHashed("foo",
+      R"test(
+      #define GTEST1(Code) void foo() { Code }
+      #define GTEST2(Code) GTEST1({ while(false){} int gtest_var; Code })
+      GTEST2({
+        do {
+          int i = 0;
+          int j = 2;
+        } while(0);
+      })
+      )test"
+  ));
+  ASSERT_FALSE(isHashed(Stmt::StmtClass::WhileStmtClass,
+      R"test(
+      #define GTEST1(Code) void foo() { Code }
+      #define GTEST2(Code) GTEST1({ while(false){} Code })
+      GTEST2({})
+      )test"
+  ));
+}
+
 // Imported tests from the related GSoC 2015 project
 
 TEST(ASTStructure, GSoC2015CompoundStmt) {
@@ -597,42 +675,6 @@ TEST(ASTStructure, CompoundStmtLocal) {
           global_two = 21;
         }
       }
-      )test"
-  ));
-}
-
-// Macro tests
-
-TEST(ASTStructure, MacroTest) {
-  ASSERT_TRUE(isHashed(Stmt::StmtClass::DoStmtClass,
-      R"test(
-      #define GTEST1(Code) void foo() { Code }
-      #define GTEST2(Code) GTEST1({ int gtest_var; Code })
-      GTEST2({
-        do {
-          int i = 0;
-          int j = 2;
-        } while(0);
-      })
-      )test"
-  ));
-  ASSERT_FALSE(isHashed("foo",
-      R"test(
-      #define GTEST1(Code) void foo() { Code }
-      #define GTEST2(Code) GTEST1({ while(false){} int gtest_var; Code })
-      GTEST2({
-        do {
-          int i = 0;
-          int j = 2;
-        } while(0);
-      })
-      )test"
-  ));
-  ASSERT_FALSE(isHashed(Stmt::StmtClass::WhileStmtClass,
-      R"test(
-      #define GTEST1(Code) void foo() { Code }
-      #define GTEST2(Code) GTEST1({ while(false){} Code })
-      GTEST2({})
       )test"
   ));
 }

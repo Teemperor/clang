@@ -36,6 +36,7 @@ namespace {
 
     bool shouldTraversePostOrder() const { return true; }
 
+    // TODO this code is ironically copy-pasted
     // Returns true if the SourceLocation is expanded from any macro body.
     // Returns false if the SourceLocation is invalid, is from not in a macro
     // expansion, or is from expanded from a top-level macro argument.
@@ -60,7 +61,14 @@ namespace {
       ClassHash = S->getStmtClass();
 
       if (IsInAnyMacroBody(Context.getSourceManager(), S->getLocStart())) {
-        return skip();
+        switch (S->getStmtClass()) {
+          case Stmt::FloatingLiteralClass:
+          case Stmt::CXXBoolLiteralExprClass:
+          case Stmt::IntegerLiteralClass:
+            break;
+          default:
+            return skip();
+          }
       }
 
       for (Stmt *Child : S->children()) {
@@ -230,8 +238,7 @@ namespace {
                    for (unsigned I = 0, N = S->getNumClobbers(); I != N; ++I)
                      calcHash(S->getClobberStringLiteral(I));})
   DEF_STMT_VISIT(MSAsmStmt, {})
-  DEF_STMT_VISIT(CXXForRangeStmt, {
-                 })
+  DEF_STMT_VISIT(CXXForRangeStmt, {})
   DEF_STMT_VISIT(CapturedStmt, {})
   DEF_STMT_VISIT(CoreturnStmt, {})
   DEF_STMT_VISIT(CoroutineBodyStmt, {})
@@ -241,10 +248,10 @@ namespace {
   DEF_STMT_VISIT(CoawaitExpr, {})
   DEF_STMT_VISIT(CoyieldExpr, {})
   DEF_STMT_VISIT(CUDAKernelCallExpr, {})
+  DEF_STMT_VISIT(CXXUuidofExpr, {})
 
   // TODO Obj-C support
   DEF_STMT_VISIT(ObjCArrayLiteral, {})
-  DEF_STMT_VISIT(ObjCBoolLiteralExpr, {})
   DEF_STMT_VISIT(ObjCBoxedExpr, {})
   DEF_STMT_VISIT(ObjCDictionaryLiteral, {})
   DEF_STMT_VISIT(ObjCEncodeExpr, {})
@@ -310,7 +317,6 @@ namespace {
   DEF_STMT_VISIT(ContinueStmt, {})
   DEF_STMT_VISIT(DoStmt, {})
   DEF_STMT_VISIT(Expr, {})
-  DEF_STMT_VISIT(CXXBoolLiteralExpr, {})
   DEF_STMT_VISIT(AddrLabelExpr, {})
   DEF_STMT_VISIT(ArrayTypeTraitExpr, {})
   DEF_STMT_VISIT(CompoundAssignOperator, {})
@@ -322,6 +328,13 @@ namespace {
   DEF_STMT_VISIT(CXXNoexceptExpr, {})
   DEF_STMT_VISIT(CXXNullPtrLiteralExpr, {})
   DEF_STMT_VISIT(CXXScalarValueInitExpr, {})
+  DEF_STMT_VISIT(CXXThisExpr, {})
+  DEF_STMT_VISIT(CXXFunctionalCastExpr, {})
+  DEF_STMT_VISIT(CXXNamedCastExpr, {})
+  DEF_STMT_VISIT(CXXConstCastExpr, {})
+  DEF_STMT_VISIT(CXXDynamicCastExpr, {})
+  DEF_STMT_VISIT(CXXReinterpretCastExpr, {})
+  DEF_STMT_VISIT(CXXStaticCastExpr, {})
 
 
   DEF_STMT_VISIT(CXXCatchStmt, {
@@ -366,11 +379,9 @@ namespace {
                    S->isArrow();
                  })
   DEF_STMT_VISIT(CXXStdInitializerListExpr, {})
-  DEF_STMT_VISIT(CXXThisExpr, {})
   DEF_STMT_VISIT(CXXThrowExpr, {})
   DEF_STMT_VISIT(CXXTypeidExpr, {})
   DEF_STMT_VISIT(CXXUnresolvedConstructExpr, {})
-  DEF_STMT_VISIT(CXXUuidofExpr, {})
   DEF_STMT_VISIT(CallExpr, {})
   DEF_STMT_VISIT(CXXMemberCallExpr, {})
   DEF_STMT_VISIT(CXXOperatorCallExpr, {})
@@ -378,19 +389,8 @@ namespace {
   DEF_STMT_VISIT(CastExpr, {})
   DEF_STMT_VISIT(ExplicitCastExpr, {})
   DEF_STMT_VISIT(CStyleCastExpr, {})
-  DEF_STMT_VISIT(CXXFunctionalCastExpr, {})
-  DEF_STMT_VISIT(CXXNamedCastExpr, {})
-  DEF_STMT_VISIT(CXXConstCastExpr, {})
-  DEF_STMT_VISIT(CXXDynamicCastExpr, {})
-  DEF_STMT_VISIT(CXXReinterpretCastExpr, {})
-  DEF_STMT_VISIT(CXXStaticCastExpr, {})
   DEF_STMT_VISIT(ObjCBridgedCastExpr, {})
   DEF_STMT_VISIT(ImplicitCastExpr, {})
-  DEF_STMT_VISIT(CharacterLiteral, {
-                   // We treat all literals as integer literals
-                   // as the hash is type independent
-                   ClassHash = Stmt::StmtClass::IntegerLiteralClass;
-                 })
   DEF_STMT_VISIT(ChooseExpr, {})
   DEF_STMT_VISIT(CompoundLiteralExpr, {})
   DEF_STMT_VISIT(ConvertVectorExpr, {})
@@ -401,18 +401,29 @@ namespace {
   DEF_STMT_VISIT(ExprWithCleanups, {})
   DEF_STMT_VISIT(ExpressionTraitExpr, {})
   DEF_STMT_VISIT(ExtVectorElementExpr, {})
+  DEF_STMT_VISIT(FunctionParmPackExpr, {})
+  DEF_STMT_VISIT(GenericSelectionExpr, {})
+
+
+  DEF_STMT_VISIT(CharacterLiteral, {
+                   // We treat all literals as integer literals
+                   // as the hash is type independent
+                   ClassHash = Stmt::StmtClass::IntegerLiteralClass;
+                 })
   DEF_STMT_VISIT(FloatingLiteral, {
                    // We treat all literals as integer literals
                    // as the hash is type independent
                    ClassHash = Stmt::StmtClass::IntegerLiteralClass;
                  })
-  DEF_STMT_VISIT(FunctionParmPackExpr, {})
-  DEF_STMT_VISIT(GenericSelectionExpr, {})
   DEF_STMT_VISIT(ImaginaryLiteral, {
                    // We treat all literals as integer literals
                    // as the hash is type independent
                    ClassHash = Stmt::StmtClass::IntegerLiteralClass;
                  })
+
+  DEF_STMT_VISIT(ObjCBoolLiteralExpr, {})
+  DEF_STMT_VISIT(CXXBoolLiteralExpr, {})
+
   DEF_STMT_VISIT(ImplicitValueInitExpr, {})
   DEF_STMT_VISIT(InitListExpr, {})
   DEF_STMT_VISIT(IntegerLiteral, {})
@@ -458,7 +469,9 @@ namespace {
   DEF_STMT_VISIT(LabelStmt, {
                    //TODO calcHash(S->getDecl()->getName());
                  })
-  DEF_STMT_VISIT(MSDependentExistsStmt, {})
+  DEF_STMT_VISIT(MSDependentExistsStmt, {
+                   calcHash(S->isIfExists());
+                 })
 
   DEF_STMT_VISIT(SEHExceptStmt, {})
   DEF_STMT_VISIT(SEHFinallyStmt, {})
@@ -520,8 +533,8 @@ namespace {
                    calcHash(D->isMSAsmLabel());
                    calcHash(D->isGnuLocal());
                    calcHash(D->isResolvedMSAsmLabel());
-                   if (D->isMSAsmLabel())
-                     calcHash(D->getMSAsmLabel());
+                   //if (D->isMSAsmLabel())
+                   //  calcHash(D->getMSAsmLabel());
                  })
   DEF_DECL_VISIT(NamespaceDecl, {})
   DEF_DECL_VISIT(NamespaceAliasDecl, {})
@@ -533,7 +546,9 @@ namespace {
   DEF_DECL_VISIT(BuiltinTemplateDecl, {})
   DEF_DECL_VISIT(RedeclarableTemplateDecl, {})
   DEF_DECL_VISIT(ClassTemplateDecl, {})
-  DEF_DECL_VISIT(FunctionTemplateDecl, {})
+  DEF_DECL_VISIT(FunctionTemplateDecl, {
+                   calcHash(D->getTemplatedDecl());
+                 })
   DEF_DECL_VISIT(TypeAliasTemplateDecl, {})
   DEF_DECL_VISIT(VarTemplateDecl, {})
   DEF_DECL_VISIT(TemplateTemplateParmDecl, {})
