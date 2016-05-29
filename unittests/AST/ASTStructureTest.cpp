@@ -18,22 +18,21 @@
 
 using namespace clang;
 
-
-class FindNamedDecl : public RecursiveASTVisitor<FindNamedDecl> {
-  std::string DeclarationName;
-  NamedDecl *FoundNamedDecl = nullptr;
+class FunctionFinder : public RecursiveASTVisitor<FunctionFinder> {
+  std::string FunctionName;
+  FunctionDecl *FoundFunction = nullptr;
 public:
-  FindNamedDecl(const std::string& DeclarationName)
-    : DeclarationName(DeclarationName) {
+  FunctionFinder (const std::string& FunctionName)
+    : FunctionName(FunctionName) {
   }
 
-  NamedDecl *getDecl() {
-    return FoundNamedDecl;
+  FunctionDecl *getDecl() {
+    return FoundFunction;
   }
 
-  bool VisitNamedDecl(NamedDecl *D) {
-    if (D->getQualifiedNameAsString() == DeclarationName) {
-      FoundNamedDecl = D;
+  bool VisitFunctionDecl(FunctionDecl *D) {
+    if (D->getQualifiedNameAsString() == FunctionName) {
+      FoundFunction = D;
       return false;
     }
     return true;
@@ -46,11 +45,11 @@ bool isHashed(const std::string& DeclName, const std::string& code) {
 
   auto Hash = ASTStructure(ASTUnit->getASTContext());
 
-  FindNamedDecl Finder(DeclName);
+  FunctionFinder Finder(DeclName);
   Finder.TraverseTranslationUnitDecl(ASTContext.getTranslationUnitDecl());
 
   assert(Finder.getDecl());
-  return Hash.findHash(Finder.getDecl()).Success;
+  return Hash.findHash(Finder.getDecl()->getBody()).Success;
 }
 
 class FindStmt : public RecursiveASTVisitor<FindStmt> {
@@ -99,33 +98,20 @@ bool compareStructure(const std::string& DeclNameA,
   auto HashA = ASTStructure(ASTUnitA->getASTContext());
   auto HashB = ASTStructure(ASTUnitB->getASTContext());
 
-  // Iterate over all top level declarations and search
-  // the specified one in the first translation unit
-  for (auto DA : ASTUnitA->getASTContext().getTranslationUnitDecl()->decls()) {
-      if (auto NamedDA = dyn_cast<NamedDecl>(DA)) {
-        if (NamedDA->getNameAsString() == DeclNameA) {
+  FunctionFinder FinderA(DeclNameA);
+  FinderA.TraverseTranslationUnitDecl(ASTUnitA->getASTContext().getTranslationUnitDecl());
+  assert(FinderA.getDecl());
 
-          // Iterate over all top level declarations and search
-          // the specified one in the second translation unit
-          for (auto DB : ASTUnitB->getASTContext().getTranslationUnitDecl()->decls()) {
-            if (auto NamedDB = dyn_cast<NamedDecl>(DB)) {
-              if (NamedDB->getNameAsString() == DeclNameB) {
-                // If we have both declarations, compare
-                // their hashes
-                auto HashSearchA = HashA.findHash(DA);
-                auto HashSearchB = HashB.findHash(DB);
-                assert(HashSearchA.Success);
-                assert(HashSearchB.Success);
-                return HashSearchA.Hash == HashSearchB.Hash;
-              }
-            }
-          }
-        }
-      }
-  }
-  // We couldn't find the two specified declarations, so we abort
-  // fail the whole test.
-  assert("Couldn't find specified delcarations");
+  FunctionFinder FinderB(DeclNameB);
+  FinderB.TraverseTranslationUnitDecl(ASTUnitB->getASTContext().getTranslationUnitDecl());
+  assert(FinderB.getDecl());
+
+
+  auto HashSearchA = HashA.findHash(FinderA.getDecl()->getBody());
+  auto HashSearchB = HashB.findHash(FinderB.getDecl()->getBody());
+  assert(HashSearchA.Success);
+  assert(HashSearchB.Success);
+  return HashSearchA.Hash == HashSearchB.Hash;
 }
 
 
@@ -134,81 +120,6 @@ bool compareStmt(const std::string& codeA,
   return compareStructure("x", "x",
                           "void x() { " + codeA + "}",
                           "void x() { " + codeB + "}");
-}
-
-TEST(ASTStructure, InheritMembers) {
-  // Test that inheriting from classes
-  // with same hash results is detected
-  ASSERT_TRUE(compareStructure("D1", "D2",
-      "class B1 { int x1; int y1; };\n"
-      "class D1 : public B1 { };",
-
-      "class B2 { int x2; int y2; };\n"
-      "class D2 : public B2 { };"
-  ));
-  // Inherting from classes with different
-  // hashes shouldn't result in copy-paste
-  ASSERT_FALSE(compareStructure("D1", "D2",
-      "class B1 { int x2; };\n"
-      "class D1 : public B1 { };",
-
-      "class B2 { int x1; int y1; };\n"
-      "class D2 : public B2 { };"
-  ));
-}
-
-TEST(ASTStructure, InheritFunctions) {
-  ASSERT_TRUE(compareStructure("D1", "D2",
-      "class B1 { void x() { int j; } };\n"
-      "class D1 : public B1 { };",
-
-      "class B2 { void y() { int j; } };\n"
-      "class D2 : public B2 { };"
-  ));
-  ASSERT_FALSE(compareStructure("D1", "D2",
-      "class B1 { void x() { int j; } };\n"
-      "class D1 : public B1 { };\n",
-
-      "class B2 { void y() { } };\n"
-      "class D2 : public B2 { };"
-  ));
-}
-
-TEST(ASTStructure, VariadicFunctions) {
-  // Test that variadic functions and non variadic functions are
-  // distinguished
-  ASSERT_FALSE(compareStructure("x", "x",
-      "void x(...) { }",
-      "void x() { }"
-  ));
-}
-
-TEST(ASTStructure, StaticFunctions) {
-  ASSERT_FALSE(compareStructure("B", "B",
-      "class B { void x() { } };",
-      "class B { static void x() { } };"
-  ));
-}
-
-TEST(ASTStructure, ConstFunctions) {
-  ASSERT_FALSE(compareStructure("B", "B",
-      "class B { void x() const { } };",
-      "class B { void x() { } };"
-  ));
-}
-
-TEST(ASTStructure, VolatileFunctions) {
-  ASSERT_FALSE(compareStructure("B", "B",
-      "class B { void x() volatile { } };",
-      "class B { void x() { } };"
-  ));
-}
-
-TEST(ASTStructure, VirtualFunctions) {
-  ASSERT_FALSE(compareStructure("B", "B",
-      "class B { void x() { } };",
-      "class B { virtual void x() { } };"
-  ));
 }
 
 TEST(ASTStructure, IfStmt) {
@@ -263,9 +174,17 @@ TEST(ASTStructure, MSDependentExistsStmt) {
 }
 
 TEST(ASTStructure, DeclStmt) {
+  ASSERT_TRUE(compareStmt(
+      "int y = 0;",
+      "long v = 0;"
+  ));
   ASSERT_FALSE(compareStmt(
       "int y = 0;",
       "int y = (1 + 1);"
+  ));
+  ASSERT_FALSE(compareStmt(
+      "int a, b = 0;",
+      "int b = 0;"
   ));
 }
 
@@ -316,6 +235,39 @@ TEST(ASTStructure, ConditionalOperator) {
   ));
 }
 
+TEST(ASTStructure, CXXFold) {
+  ASSERT_FALSE(compareStructure("x", "x",
+      "template<class... A> bool x(A... args) { return (... && args); }",
+      "template<class... A> bool x(A... args) { return (... || args); }"
+  ));
+  ASSERT_FALSE(compareStructure("x", "x",
+      "template<class... A> bool x(A... args) { return (... && args); }",
+      "template<class... A> bool x(A... args) { return (args && ...); }"
+  ));
+}
+
+TEST(ASTStructure, CXXOperatorCallExpr) {
+  ASSERT_FALSE(compareStructure("x", "x",
+      R"test(
+      class X {
+      public:
+        void operator-=(int i);
+        void operator+=(int i);
+      };
+      void x() { X x; x += 1; }
+      )test",
+
+      R"test(
+      class X {
+      public:
+        void operator-=(int i);
+        void operator+=(int i);
+      };
+      void x() { X x; x -= 1; }
+      )test"
+  ));
+}
+
 TEST(ASTStructure, CXXTryStmt) {
   ASSERT_TRUE(compareStmt(
       "try { int x; } catch (int x) {}",
@@ -342,6 +294,25 @@ TEST(ASTStructure, DoStmt) {
   ));
 }
 
+TEST(ASTStructure, LambdaExpr) {
+  ASSERT_TRUE(compareStmt(
+      "auto a = [](){ return 1; };",
+      "auto a = [](){ return 2; };"
+  ));
+  ASSERT_FALSE(compareStmt(
+      "int i; auto a = [](){ return 2; };",
+      "int i; auto a = [](){ return 1 + 1; };"
+  ));
+  ASSERT_FALSE(compareStmt(
+      "int i; auto a = [i](){ return 1; };",
+      "int i; auto a = [&i](){ return 1; };"
+  ));
+  ASSERT_FALSE(compareStmt(
+      "auto a = [](int i){ return i; };",
+      "auto a = [](int i, int b){ return i; };"
+  ));
+}
+
 TEST(ASTStructure, CompoundStmt) {
   ASSERT_TRUE(compareStmt(
       "int x;",
@@ -362,9 +333,16 @@ TEST(ASTStructure, Labels) {
       "lbl: goto lbl;",
       "lbl2: goto lbl2;"
   ));
-}
 
-// TODO test asm
+  ASSERT_TRUE(compareStmt(
+      "void* lbladdr = &&lbl; goto *lbladdr; lbl:;",
+      "void* lbladdr = &&lbl; goto *lbladdr; lbl:;"
+  ));
+  ASSERT_FALSE(compareStmt(
+      "lbl2:; void* lbladdr = &&lbl; goto *lbladdr; lbl:;",
+      "lbl2:; void* lbladdr = &&lbl2; goto *lbladdr; lbl:;"
+  ));
+}
 
 TEST(ASTStructure, WhileStmt) {
   ASSERT_TRUE(compareStmt(
@@ -374,6 +352,11 @@ TEST(ASTStructure, WhileStmt) {
   ASSERT_FALSE(compareStmt(
       "while (true) { int x; }",
       "while (false) { }"
+  ));
+
+  ASSERT_TRUE(compareStmt(
+      "while (int v = 0) { int x; }",
+      "while (int w = 0) { int y; }"
   ));
   ASSERT_FALSE(compareStmt(
       "int v; while ((v = 0)) { int x; }",
@@ -443,6 +426,18 @@ TEST(ASTStructure, UnaryOperator) {
   ));
 }
 
+TEST(ASTStructure, InitListExpr) {
+  ASSERT_TRUE(compareStructure("x", "x",
+      "struct A {int a, b, c; }; void x() { A a = {1, 2, 3}; }",
+      "struct A {int a, b, c; }; void x() { A a = {4, 5, 6}; }"
+  ));
+  // Different operations
+  ASSERT_FALSE(compareStructure("x", "x",
+     "struct A {int a, b, c; }; void x() { A a = {1 + 1, 2, 3}; }",
+     "struct A {int a, b, c; }; void x() { A a = {2, 2, 3}; }"
+ ));
+}
+
 TEST(ASTStructure, Casting) {
   ASSERT_TRUE(compareStructure("x", "x",
       "int x() { return static_cast<unsigned>(1); }",
@@ -478,28 +473,6 @@ TEST(ASTStructure, CXXCatchStmt) {
   ASSERT_FALSE(compareStmt(
       "try {} catch (int x) {}",
       "try {} catch (...) {}"
-  ));
-}
-
-TEST(ASTStructure, FunctionTemplate) {
-  ASSERT_TRUE(compareStructure("y", "x",
-      "template <class T> void y() { }",
-      "template <class V> void x() { }"
-  ));
-  ASSERT_FALSE(compareStructure("x", "x",
-      "template <class T> void x() { }",
-      "template <class T, class T2> void x() { }"
-  ));
-}
-
-TEST(ASTStructure, ClassTemplate) {
-  ASSERT_TRUE(compareStructure("X", "X",
-      "template <class T> class X { T member; };",
-      "template <class T> class X { T member; };"
-  ));
-  ASSERT_FALSE(compareStructure("X", "X",
-      "template <class T> class X { T member; };",
-      "template <class T, class T2> class X { T member; };"
   ));
 }
 

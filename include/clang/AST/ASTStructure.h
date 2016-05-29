@@ -16,7 +16,6 @@
 #define LLVM_CLANG_AST_STRUCTURALHASH_H
 
 #include <unordered_map>
-#include <clang/AST/Decl.h>
 #include <clang/AST/Stmt.h>
 
 namespace clang {
@@ -37,7 +36,6 @@ namespace clang {
 /// and other parts of the program are ignored.
 class ASTStructure {
 
-  std::unordered_map<const Decl *, unsigned> HashedDecls;
   std::unordered_map<const Stmt *, unsigned> HashedStmts;
 
 public:
@@ -55,14 +53,6 @@ public:
     bool Success;
   };
 
-  HashSearchResult findHash(const Decl *D) {
-    auto I = HashedDecls.find(D);
-    if (I == HashedDecls.end()) {
-      return {0, false};
-    }
-    return {I->second, true};
-  }
-
   HashSearchResult findHash(const Stmt *S) {
     auto I = HashedStmts.find(S);
     if (I == HashedStmts.end()) {
@@ -71,24 +61,12 @@ public:
     return {I->second, true};
   }
 
-  unsigned getHash(const Decl *D) {
-    auto I = HashedDecls.find(D);
-    if (I == HashedDecls.end()) {
-      assert("getHash(const Decl *D) called on unknown Decl");
-    }
-    return I->second;
-  }
-
   unsigned getHash(const Stmt *S) {
     auto I = HashedStmts.find(S);
     if (I == HashedStmts.end()) {
       assert("getHash(const Stmt *D) called on unknown Stmt");
     }
     return I->second;
-  }
-
-  void add(unsigned Hash, const Decl *Decl) {
-    HashedDecls.insert(std::make_pair(Decl, Hash));
   }
 
   void add(unsigned Hash, const Stmt *Stmt) {
