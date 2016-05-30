@@ -592,7 +592,7 @@ TEST(ASTStructure, CompoundStmtLocal) {
 
 // Use case tests
 
-// This is the example form the project proposal:
+// This is the example from the project proposal:
 // Two test cases testing the setWidth and setHeight method
 // of the Image class. The setHeight test however is an
 // clone of the setWidth test case and should be detected as such.
