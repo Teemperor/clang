@@ -76,22 +76,6 @@ public:
 #include "clang/AST/StmtNodes.inc"
 
 private:
-  // FIXME: this code is ironically copy-pasted form SemaChecking.cpp.
-  // Returns true if the SourceLocation is expanded from any macro body.
-  // Returns false if the SourceLocation is invalid, is from not in a macro
-  // expansion, or is from expanded from a top-level macro argument.
-  static bool IsInAnyMacroBody(const SourceManager &SM, SourceLocation Loc) {
-    if (Loc.isInvalid())
-      return false;
-
-    while (Loc.isMacroID()) {
-      if (SM.isMacroBodyExpansion(Loc))
-        return true;
-      Loc = SM.getImmediateMacroCallerLoc(Loc);
-    }
-
-    return false;
-  }
 
   bool shouldSkipStmt(Stmt *S) {
     switch (S->getStmtClass()) {
@@ -101,8 +85,8 @@ private:
     case Stmt::IntegerLiteralClass:
       return false;
     default:
-      return IsInAnyMacroBody(Context.getSourceManager(), S->getLocStart()) ||
-             IsInAnyMacroBody(Context.getSourceManager(), S->getLocEnd());
+      return Context.getSourceManager().IsInAnyMacroBody(S->getLocStart()) ||
+             Context.getSourceManager().IsInAnyMacroBody(S->getLocEnd());
     }
   }
 

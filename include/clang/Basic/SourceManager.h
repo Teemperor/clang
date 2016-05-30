@@ -1169,6 +1169,28 @@ public:
     return getDecomposedLoc(SpellingLoc).second;
   }
 
+
+  //
+
+  /// \brief Tests whether the given source location is expanded from any
+  /// macro body.
+  ///
+  /// \returns Returns true if the SourceLocation is expanded from any macro
+  /// body. Returns false if the SourceLocation is invalid, is from not in a
+  /// macro expansion, or is from expanded from a top-level macro argument.
+  bool IsInAnyMacroBody(SourceLocation Loc) const {
+    if (Loc.isInvalid())
+      return false;
+
+    while (Loc.isMacroID()) {
+      if (isMacroBodyExpansion(Loc))
+        return true;
+      Loc = getImmediateMacroCallerLoc(Loc);
+    }
+
+    return false;
+  }
+
   /// \brief Tests whether the given source location represents a macro
   /// argument's expansion into the function-like macro definition.
   ///
