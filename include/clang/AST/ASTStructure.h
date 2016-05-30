@@ -46,7 +46,7 @@ public:
   ///
   /// Analyses the Stmts in the given AST and stores all information
   /// about their structure in the newly created ASTStructure object.
-  explicit ASTStructure(ASTContext& Context);
+  explicit ASTStructure(ASTContext &Context);
 
   struct HashSearchResult {
     unsigned Hash;
