@@ -39,6 +39,8 @@ public:
   }
 };
 
+// Returns true if the declaration with the given qualified name
+// is hashed when processing the given code.
 bool isHashed(const std::string& DeclName, const std::string& code) {
   auto ASTUnit = tooling::buildASTFromCode(code);
   ASTContext& ASTContext = ASTUnit->getASTContext();
@@ -73,6 +75,8 @@ public:
   }
 };
 
+// Returns true if any Stmt with the given class
+// is hashed when processing the given code.
 bool isHashed(Stmt::StmtClass NeededStmtClass, const std::string& code) {
   auto ASTUnit = tooling::buildASTFromCode(code);
   ASTContext& ASTContext = ASTUnit->getASTContext();
@@ -86,6 +90,8 @@ bool isHashed(Stmt::StmtClass NeededStmtClass, const std::string& code) {
   return Hash.findHash(Finder.getStmt()).Success;
 }
 
+// Returns true if the Decls with the given qualified names
+// have similar structure according to ASTStructure.
 bool compareStructure(const std::string& DeclNameA,
                       const std::string& DeclNameB,
                       const std::string& codeA,
@@ -98,12 +104,15 @@ bool compareStructure(const std::string& DeclNameA,
   auto HashA = ASTStructure(ASTUnitA->getASTContext());
   auto HashB = ASTStructure(ASTUnitB->getASTContext());
 
+  auto& ASTContextA = ASTUnitA->getASTContext();
+  auto& ASTContextB = ASTUnitB->getASTContext();
+
   FunctionFinder FinderA(DeclNameA);
-  FinderA.TraverseTranslationUnitDecl(ASTUnitA->getASTContext().getTranslationUnitDecl());
+  FinderA.TraverseTranslationUnitDecl(ASTContextA.getTranslationUnitDecl());
   assert(FinderA.getDecl());
 
   FunctionFinder FinderB(DeclNameB);
-  FinderB.TraverseTranslationUnitDecl(ASTUnitB->getASTContext().getTranslationUnitDecl());
+  FinderB.TraverseTranslationUnitDecl(ASTContextB.getTranslationUnitDecl());
   assert(FinderB.getDecl());
 
 
@@ -115,6 +124,8 @@ bool compareStructure(const std::string& DeclNameA,
 }
 
 
+// Returns true if the given Stmts
+// have similar structure according to ASTStructure.
 bool compareStmt(const std::string& codeA,
                  const std::string& codeB) {
   return compareStructure("x", "x",
@@ -154,6 +165,7 @@ TEST(ASTStructure, StmtExpr) {
 
 
 TEST(ASTStructure, MSDependentExistsStmt) {
+  // Check that __if_exists != __if_not_exists
   ASSERT_FALSE(compareStructure("x", "x",
       R"test(
       template<typename T>
@@ -162,7 +174,6 @@ TEST(ASTStructure, MSDependentExistsStmt) {
         }
       }
       )test",
-
       R"test(
       template<typename T>
       void x(T &t) {
@@ -174,14 +185,17 @@ TEST(ASTStructure, MSDependentExistsStmt) {
 }
 
 TEST(ASTStructure, DeclStmt) {
+  // Check that types don't influence the structure.
   ASSERT_TRUE(compareStmt(
       "int y = 0;",
       "long v = 0;"
   ));
+  // Check that the initialization expression influences the structure.
   ASSERT_FALSE(compareStmt(
       "int y = 0;",
       "int y = (1 + 1);"
   ));
+  // Check that multiple declarations != single declarations
   ASSERT_FALSE(compareStmt(
       "int a, b = 0;",
       "int b = 0;"
@@ -189,14 +203,17 @@ TEST(ASTStructure, DeclStmt) {
 }
 
 TEST(ASTStructure, ArraySubscriptExpr) {
+  // Check that the parameter influences the structure
   ASSERT_FALSE(compareStmt(
       "int i[2]; i[1] = 0;",
       "int i[2]; i[1 + 0] = 0;"
   ));
+  // Reverse check from above
   ASSERT_FALSE(compareStmt(
       "int i[2]; (1)[i] = 0;",
       "int i[2]; (1 + 0)[i] = 0;"
   ));
+  // Previous two checks mixed together.
   ASSERT_FALSE(compareStmt(
       "int i[2]; (i)[1 + 0] = 0;",
       "int i[2]; (1 + 0)[i] = 0;"
@@ -224,7 +241,7 @@ TEST(ASTStructure, ConditionalOperator) {
       "int y = true ? 1 : 0 + 0;"
   ));
 
-  // Check GNU version
+  // Check GNU version is also correctly handled
   ASSERT_FALSE(compareStmt(
       "int y = 1 ? : 0;",
       "int y = 1 ? : 0 + 0;"
@@ -236,10 +253,12 @@ TEST(ASTStructure, ConditionalOperator) {
 }
 
 TEST(ASTStructure, CXXFold) {
+  // Different operators influence structure
   ASSERT_FALSE(compareStructure("x", "x",
       "template<class... A> bool x(A... args) { return (... && args); }",
       "template<class... A> bool x(A... args) { return (... || args); }"
   ));
+  // Right-side vs left-side influences structure
   ASSERT_FALSE(compareStructure("x", "x",
       "template<class... A> bool x(A... args) { return (... && args); }",
       "template<class... A> bool x(A... args) { return (args && ...); }"
@@ -247,6 +266,7 @@ TEST(ASTStructure, CXXFold) {
 }
 
 TEST(ASTStructure, CXXOperatorCallExpr) {
+  // Different operands influence structure
   ASSERT_FALSE(compareStructure("x", "x",
       R"test(
       class X {
@@ -273,6 +293,7 @@ TEST(ASTStructure, CXXTryStmt) {
       "try { int x; } catch (int x) {}",
       "try { int y; } catch (int x) {}"
   ));
+  // Different body influences structure.
   ASSERT_FALSE(compareStmt(
       "try { int x; } catch (int x) {}",
       "try { } catch (int x) {}"
@@ -284,14 +305,58 @@ TEST(ASTStructure, DoStmt) {
       "do { int x; } while (true);",
       "do { int y; } while (false);"
   ));
+  // Different body influences structure.
   ASSERT_FALSE(compareStmt(
       "do { int x; } while (true);",
       "do { } while (true);"
   ));
+  // Different condition influences structure.
   ASSERT_FALSE(compareStmt(
       "int v; do { int x; } while ((v = 1));",
       "int v; do { int y; } while (true);"
   ));
+}
+
+TEST(ASTStructure, GCCAsmStmt) {
+  // Different assembly influences structure
+  ASSERT_FALSE(compareStmt(
+      R"test(
+      int a, b = 1;
+      asm ("mov %1, %0\n\t"
+           "add $1, %0"
+         : "=r" (a)
+         : "r" (b));
+
+      )test",
+      R"test(
+      int a, b = 1;
+      // NOTE: different asm here
+      asm ("mov %1, %1\n\t"
+           "add $1, %0"
+         : "=r" (a)
+         : "r" (b));
+
+      )test"
+  ));
+  // Different output operands influences structure
+  ASSERT_FALSE(compareStmt(
+      R"test(
+      int a, b = 1, c = 1;
+      asm ("mov %1, %0\n\t"
+           "add $1, %0"
+         : "=r" (a)
+         : "r" (b));
+      )test",
+      R"test(
+      int a, b = 1, c = 1;
+      asm ("mov %1, %0\n\t"
+           "add $1, %0"
+         : "=r" (a)
+         // NOTE: Different output operands
+         : "r" (b), "r" (c));
+      )test"
+  ));
+  // TODO Check different input operands
 }
 
 TEST(ASTStructure, LambdaExpr) {
@@ -299,14 +364,22 @@ TEST(ASTStructure, LambdaExpr) {
       "auto a = [](){ return 1; };",
       "auto a = [](){ return 2; };"
   ));
+  // Different lambda body influences structure.
   ASSERT_FALSE(compareStmt(
       "int i; auto a = [](){ return 2; };",
       "int i; auto a = [](){ return 1 + 1; };"
   ));
+  // Different capture types influence structure.
   ASSERT_FALSE(compareStmt(
       "int i; auto a = [i](){ return 1; };",
       "int i; auto a = [&i](){ return 1; };"
   ));
+  // Different amount of captures influences structure.
+  ASSERT_FALSE(compareStmt(
+      "int i, j; auto a = [i](){ return 1; };",
+      "int i, j; auto a = [i, j](){ return 1; };"
+  ));
+  // Different function signature influences structure.
   ASSERT_FALSE(compareStmt(
       "auto a = [](int i){ return i; };",
       "auto a = [](int i, int b){ return i; };"
@@ -315,9 +388,10 @@ TEST(ASTStructure, LambdaExpr) {
 
 TEST(ASTStructure, CompoundStmt) {
   ASSERT_TRUE(compareStmt(
-      "int x;",
-      "int x;"
+      "int x; int y;",
+      "int x; int y;"
   ));
+  // Different amount of Stmts influence structure.
   ASSERT_FALSE(compareStmt(
       "int x;",
       "int x; int y;"
@@ -329,15 +403,17 @@ TEST(ASTStructure, Labels) {
       "lbl: goto lbl;",
       "lbl: goto lbl;"
   ));
-  ASSERT_FALSE(compareStmt(
-      "lbl: goto lbl;",
-      "lbl2: goto lbl2;"
-  ));
-
   ASSERT_TRUE(compareStmt(
       "void* lbladdr = &&lbl; goto *lbladdr; lbl:;",
       "void* lbladdr = &&lbl; goto *lbladdr; lbl:;"
   ));
+  // Different label names influence structure.
+  // FIXME: Put lbl names into feature vectors if possible.
+  ASSERT_FALSE(compareStmt(
+      "lbl: goto lbl;",
+      "lbl2: goto lbl2;"
+  ));
+  // Same as above with indirect goto.
   ASSERT_FALSE(compareStmt(
       "lbl2:; void* lbladdr = &&lbl; goto *lbladdr; lbl:;",
       "lbl2:; void* lbladdr = &&lbl2; goto *lbladdr; lbl:;"
@@ -349,15 +425,16 @@ TEST(ASTStructure, WhileStmt) {
       "while (true) { int x; }",
       "while (false) { int y; }"
   ));
-  ASSERT_FALSE(compareStmt(
-      "while (true) { int x; }",
-      "while (false) { }"
-  ));
-
   ASSERT_TRUE(compareStmt(
       "while (int v = 0) { int x; }",
       "while (int w = 0) { int y; }"
   ));
+  // Different bodies influence structure.
+  ASSERT_FALSE(compareStmt(
+      "while (true) { int x; }",
+      "while (false) { }"
+  ));
+  // Different condition influences structure.
   ASSERT_FALSE(compareStmt(
       "int v; while ((v = 0)) { int x; }",
       "int v; while (false) { int y; }"
@@ -365,6 +442,10 @@ TEST(ASTStructure, WhileStmt) {
 }
 
 TEST(ASTStructure, NumberLiterals) {
+  // Test that different number literals always
+  // result in the same structure.
+  // Some of the tests have implicit casts in them that also
+  // need to be ignored by ASTStructure to pass the test.
   ASSERT_TRUE(compareStmt(
       "double x = 1;",
       "double x = 1l;"
@@ -375,7 +456,7 @@ TEST(ASTStructure, NumberLiterals) {
   ));
   ASSERT_TRUE(compareStmt(
       "double x = 1.0;",
-      "long x = 1l;"
+      "long x = 1;"
   ));
   ASSERT_TRUE(compareStmt(
       "double x = 1.0f;",
@@ -388,14 +469,17 @@ TEST(ASTStructure, AtomicExpr) {
       "int i[2]; __atomic_store_n(i, 1, __ATOMIC_RELAXED);",
       "int j[2]; __atomic_store_n(j, 1, __ATOMIC_RELAXED);"
   ));
+  // Test first argument influences structure.
   ASSERT_FALSE(compareStmt(
       "int i[2]; __atomic_store_n(i, 1, __ATOMIC_RELAXED);",
       "int i[2]; __atomic_store_n(i + 1, 1, __ATOMIC_RELAXED);"
   ));
+  // Test second argument influences structure.
   ASSERT_FALSE(compareStmt(
       "int i[2]; __atomic_store_n(i, 1, __ATOMIC_RELAXED);",
       "int i[2]; __atomic_store_n(i, 1 + 1, __ATOMIC_RELAXED);"
   ));
+  // Test that different builtin types influence structure.
   ASSERT_FALSE(compareStmt(
       "int i[2]; __atomic_exchange_n(i, 1, __ATOMIC_RELAXED);",
       "int i[2]; __atomic_store_n   (i, 1, __ATOMIC_RELAXED);"
@@ -407,7 +491,7 @@ TEST(ASTStructure, BinaryOperator) {
       "int x() { return 1 + 4 * 8; }",
       "int x() { return 2 + 3 * 9; }"
   ));
-  // Different operations
+  // Different operations influence structure.
   ASSERT_FALSE(compareStructure("x", "x",
       "int x() { return 1 + 4 - 8; }",
       "int x() { return 2 + 3 * 9; }"
@@ -419,7 +503,7 @@ TEST(ASTStructure, UnaryOperator) {
       "int x() { return -8; }",
       "int x() { return -9; }"
   ));
-  // Different operations
+  // Different operations influence structure.
   ASSERT_FALSE(compareStructure("x", "x",
       "int x() { return -8; }",
       "int x() { return +8; }"
@@ -431,7 +515,7 @@ TEST(ASTStructure, InitListExpr) {
       "struct A {int a, b, c; }; void x() { A a = {1, 2, 3}; }",
       "struct A {int a, b, c; }; void x() { A a = {4, 5, 6}; }"
   ));
-  // Different operations
+  // Subexprs in the list influence structure.
   ASSERT_FALSE(compareStructure("x", "x",
      "struct A {int a, b, c; }; void x() { A a = {1 + 1, 2, 3}; }",
      "struct A {int a, b, c; }; void x() { A a = {2, 2, 3}; }"
@@ -443,14 +527,18 @@ TEST(ASTStructure, Casting) {
       "int x() { return static_cast<unsigned>(1); }",
       "int x() { return static_cast<long>(1); }"
   ));
+  // Different cast types don't influence structure.
   ASSERT_TRUE(compareStructure("x", "x",
       "int x() { return static_cast<unsigned>(1); }",
       "int x() { return static_cast<long>(1); }"
   ));
+  // Different kinds of casts influence structure.
   ASSERT_FALSE(compareStructure("x", "x",
       "int i[2] = {0, 0}; int *x() { return static_cast<int *>(i); }",
       "const int i[2] = {0, 0}; int *x() { return const_cast<int *>(i); }"
   ));
+
+  // Different arguments influence structure.
   ASSERT_FALSE(compareStructure("x", "x",
       "int x() { return static_cast<unsigned>(1); }",
       "int x() { return static_cast<unsigned>(1 + 1); }"
@@ -466,10 +554,12 @@ TEST(ASTStructure, CXXCatchStmt) {
       "try {} catch (long x) {}",
       "try {} catch (int x) {}"
   ));
+  // Body influences structure.
   ASSERT_FALSE(compareStmt(
       "try {} catch (...) { int x; }",
       "try {} catch (...) {}"
   ));
+  // Catch-all influences structure.
   ASSERT_FALSE(compareStmt(
       "try {} catch (int x) {}",
       "try {} catch (...) {}"
@@ -477,6 +567,9 @@ TEST(ASTStructure, CXXCatchStmt) {
 }
 
 TEST(ASTStructure, ForStmt) {
+  // Two functions with different
+  // naming conventions but doing the same need
+  // to have the same structure.
   ASSERT_TRUE(compareStructure("array_sum", "ArraySum",
       "int array_sum(int* array, unsigned len) {\n"
       "  int sum = 0;\n"
@@ -510,17 +603,13 @@ TEST(ASTStructure, ForStmt) {
       "  return sum;"
       "}"
   ));
-
-  ASSERT_FALSE(compareStmt(
-      "for (int i = 0; i < 100; i++) { i++; }",
-      "for (int j = 0; j < 100; j++) { }"
-  ));
 }
 
 
 // Macro tests
 
 TEST(ASTStructure, MacroTest) {
+  // Code that is an macro argument should be hashed
   ASSERT_TRUE(isHashed(Stmt::StmtClass::DoStmtClass,
       R"test(
       #define GTEST1(Code) void foo() { Code }
@@ -533,6 +622,7 @@ TEST(ASTStructure, MacroTest) {
       })
       )test"
   ));
+  // Function is generated by macro and shouldn't be hashed.
   ASSERT_FALSE(isHashed("foo",
       R"test(
       #define GTEST1(Code) void foo() { Code }
@@ -545,6 +635,7 @@ TEST(ASTStructure, MacroTest) {
       })
       )test"
   ));
+  // Code that is in macro bodies shouldn't be hashed
   ASSERT_FALSE(isHashed(Stmt::StmtClass::WhileStmtClass,
       R"test(
       #define GTEST1(Code) void foo() { Code }
@@ -555,7 +646,6 @@ TEST(ASTStructure, MacroTest) {
 }
 
 // Imported tests from the related GSoC 2015 project
-
 TEST(ASTStructure, GSoC2015CompoundStmt) {
   ASSERT_TRUE(compareStructure("x", "x",
       R"test(
@@ -654,6 +744,10 @@ TEST(ASTStructure, CompoundStmtLocal) {
 
 // Use case tests
 
+// This is the example form the project proposal:
+// Two test cases testing the setWidth and setHeight method
+// of the Image class. The setHeight test however is an
+// clone of the setWidth test case and should be detected as such.
 TEST(ASTStructure, ImageTest) {
   ASSERT_TRUE(compareStructure("testWidthRanges", "testHeightRanges",
     R"test(struct Image {
@@ -689,6 +783,7 @@ TEST(ASTStructure, ImageTest) {
       img.setHeight(1);
       assert(img.height() == 1);
       try {
+        // NOTE: Failed to adapt clone here
         img.setWidth(-1);
         assert(false);
       } catch (...) { }
@@ -697,42 +792,43 @@ TEST(ASTStructure, ImageTest) {
 
 
   ASSERT_FALSE(compareStructure("testWidthRanges", "testHeightRanges",
-    "struct Image {\n"
-    "  int width() { return 0; }\n"
-    "  int height() { return 0; }\n"
-    "  void setWidth(int x) {}\n"
-    "  void setHeight(int y) {}\n"
-    "};"
-    "void assert(bool);\n"
-    "void testWidthRanges() {\n"
-    "  Image img;\n"
-    "  img.setWidth(0);\n"
-    "  assert(img.width() == 0);\n"
-    "  img.setWidth(1);\n"
-    "  assert(img.width() == 1);\n"
-    "  try {\n"
-    "    img.setWidth(-1);\n"
-    "    assert(false);\n"
-    "  } catch (...) { }\n"
-    "}\n",
+    R"test(struct Image {
+      int width() { return 0; }
+      int height() { return 0; }
+      void setWidth(int x) {}
+      void setHeight(int y) {}
+    };
+    void assert(bool);
+    void testWidthRanges() {
+      Image img;
+      img.setWidth(0);
+      assert(img.width() == 0);
+      img.setWidth(1);
+      assert(img.width() == 1);
+      try {
+        img.setWidth(-1);
+        assert(false);
+      } catch (...) { }
+    })test",
 
-    "struct Image {\n"
-    "  int width() { return 0; }\n"
-    "  int height() { return 0; }\n"
-    "  void setWidth(int x) {}\n"
-    "  void setHeight(int y) {}\n"
-    "};"
-    "void assert(bool);\n"
-    "void testHeightRanges() {\n"
-    "  Image img;\n"
-    "  img.setHeight(0);\n"
-    "  assert(img.height() == 0);\n"
-    "  img.setHeight(1);\n" // Note that we are missing an assert here
-                            // and so the structure changed
-    "  try {\n"
-    "    img.setWidth(-1);\n"
-    "    assert(false);\n"
-    "  } catch (...) { }\n"
-    "}\n"
+    R"test(struct Image {
+      int width() { return 0; }
+      int height() { return 0; }
+      void setWidth(int x) {}
+      void setHeight(int y) {}
+    };
+    void assert(bool);
+    void testHeightRanges() {
+      Image img;
+      img.setHeight(0);
+      assert(img.height() == 0);
+      // NOTE: Missing img.setHeight(1);
+      assert(img.height() == 1);
+      try {
+        // NOTE: Failed to adapt clone here
+        img.setWidth(-1);
+        assert(false);
+      } catch (...) { }
+    })test"
   ));
 }

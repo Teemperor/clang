@@ -30,13 +30,57 @@ namespace {
     {
     }
 
-    virtual ~StructuralHashVisitor() {
-      finishHash();
+    ~StructuralHashVisitor() {
+      // As each hash value is only saved when the calculation of the next
+      // Stmt starts, we need to explicitly save the hash value of
+      // the last Stmt here.
+      SaveCurrentHash();
     }
 
     bool shouldTraversePostOrder() const { return true; }
 
-    // TODO this code is ironically copy-pasted
+    bool PostVisitStmt(Stmt *S) {
+      // At this point we know that all Visit* calls for the previous Stmt have
+      // finished, so we know save the calculated hash before starting
+      // to calculate the next hash.
+      SaveCurrentHash();
+
+      // PostVisitStmt is the first method to be called for a new
+      // Stmt, so we save what Stmt we are currently processing
+      // for SaveCurrentHash.
+      CurrentStmt = S;
+      // Reset the initial hash code for this Stmt.
+      Hash = 0;
+      ClassHash = S->getStmtClass();
+      // Reset options for the current hash code.
+      SkipHash = false;
+      IgnoreClassHash = false;
+
+      if (shouldSkipStmt(S))
+        return Skip();
+
+      // Incorporate the hash values of all child Stmts into the current.
+      // Hash value.
+      for (Stmt *Child : S->children()) {
+        if (Child == nullptr) {
+          // We use an placeholder value for missing children.
+          CalcHash(313);
+        } else {
+          CalcHash(Child);
+        }
+      }
+
+      return true;
+    }
+
+    // Define all PostVisit methods for all possible Stmts.
+#define STMT(CLASS, PARENT)                                                    \
+  bool PostVisit##CLASS(CLASS *S);
+#include "clang/AST/StmtNodes.inc"
+
+  private:
+
+    // FIXME: this code is ironically copy-pasted form SemaChecking.cpp.
     // Returns true if the SourceLocation is expanded from any macro body.
     // Returns false if the SourceLocation is invalid, is from not in a macro
     // expansion, or is from expanded from a top-level macro argument.
@@ -53,92 +97,93 @@ namespace {
       return false;
     }
 
-    bool PostVisitStmt(Stmt *S) {
-      finishHash();
-
-      CurrentStmt = S;
-      Hash = 0;
-      ClassHash = S->getStmtClass();
-
-      if (IsInAnyMacroBody(Context.getSourceManager(), S->getLocStart())) {
-        switch (S->getStmtClass()) {
-          case Stmt::FloatingLiteralClass:
-          case Stmt::CXXBoolLiteralExprClass:
-          case Stmt::IntegerLiteralClass:
-            break;
-          default:
-            return skip();
-          }
+    bool shouldSkipStmt(Stmt *S) {
+      switch (S->getStmtClass()) {
+        case Stmt::FloatingLiteralClass:
+        case Stmt::CXXBoolLiteralExprClass:
+        case Stmt::ObjCBoolLiteralExprClass:
+        case Stmt::IntegerLiteralClass:
+          return false;
+        default:
+          return IsInAnyMacroBody(Context.getSourceManager(), S->getLocStart())
+              || IsInAnyMacroBody(Context.getSourceManager(), S->getLocEnd());
       }
-
-      for (Stmt *Child : S->children()) {
-        if (Child == nullptr) {
-            calcHash(251);
-          } else if (Child->getSourceRange().isInvalid()) {
-            calcHash(569);
-          } else {
-            calcHash(Child);
-          }
-      }
-
-      return true;
     }
 
-#define STMT(CLASS, PARENT)                                                    \
-  bool PostVisit##CLASS(CLASS *S);
-#include "clang/AST/StmtNodes.inc"
-
-  private:
-
-    bool skip() {
+    // Marks the current Stmt as no to be processed.
+    // Always returns \c true that it can be called
+    bool Skip() {
       SkipHash = true;
       return true;
     }
 
-    void calcHash(unsigned Value) {
+    // Merges the given value into the current hash code.
+    void CalcHash(unsigned Value) {
+      // We follow the same idea as Java's hashCode():
+      // Multiply with an prime, then add the new value to the
+      // hash code.
       Hash *= 53;
       Hash += Value;
     }
 
-    void calcHash(const llvm::StringRef& String) {
+    void CalcHash(const llvm::StringRef& String) {
       for (char c : String) {
-        calcHash(static_cast<unsigned>(c));
+        CalcHash(static_cast<unsigned>(c));
       }
     }
 
-    void calcHash(Stmt *S) {
+    // Merges the hash code of the given Stmt into the
+    // current hash code. Stmts that weren't hashed before by this visitor
+    // are ignored.
+    void CalcHash(Stmt *S) {
       auto I = SH.findHash(S);
       if (I.Success) {
-        calcHash(I.Hash);
+        CalcHash(I.Hash);
       }
     }
 
-    void finishHash() {
+    // Saves the current hash code into the persistent storage of this
+    // ASTStructure.
+    void SaveCurrentHash() {
       if (SkipHash) {
-        CurrentStmt = nullptr;
-        SkipHash = false;
+          return;
       }
       if (!IgnoreClassHash) {
         Hash += ClassHash;
       }
-      IgnoreClassHash = false;
       SH.add(Hash, CurrentStmt);
       CurrentStmt = nullptr;
     }
 
-    // If the current hash should not be saved for later use.
-    bool SkipHash = false;
-    // The hash value that is calculated right now.
-    unsigned Hash;
-    bool IgnoreClassHash = false;
-    unsigned ClassHash;
+    ASTStructure& SH;
+    ASTContext& Context;
+
     // The current statement that is being hashed at the moment
     // or 0 if there is no statement currently hashed.
     Stmt *CurrentStmt = nullptr;
 
-    ASTStructure& SH;
-    ASTContext& Context;
+    // All members specify properties of the hash process for the current
+    // Stmt. They are resetted after the Stmt is successfully hased.
+
+    // If the current hash should not be saved for later use.
+    bool SkipHash = false;
+
+    // The hash value that is calculated right now.
+    unsigned Hash;
+
+    // If true, the current Hash only depends on custom data of the
+    // current Stmt and the child values.
+    // Use case for this are implicit Stmts that need their child to be
+    // processed but shouldn't influence the hash value of the parent.
+    bool IgnoreClassHash = false;
+
+    // A hash value that is unique to the current Stmt class.
+    // By default, this value is merged with the \c Hash variable
+    // for the resulting
+    unsigned ClassHash;
+
   };
+
 
 #define DEF_STMT_VISIT(CLASS, CODE)                                            \
   bool StructuralHashVisitor::PostVisit##CLASS(CLASS *S)                       \
@@ -149,146 +194,65 @@ namespace {
     return true;                                                               \
   }
 
-  // Builtins
+  //--- Builtin functionality ------------------------------------------------//
   DEF_STMT_VISIT(ArrayTypeTraitExpr, {
-                   calcHash(S->getTrait());
+                   CalcHash(S->getTrait());
                  })
   DEF_STMT_VISIT(AsTypeExpr, {})
   DEF_STMT_VISIT(AtomicExpr, {
-                   calcHash(S->isVolatile());
-                   calcHash(S->getOp());
+                   CalcHash(S->isVolatile());
+                   CalcHash(S->getOp());
                  })
   DEF_STMT_VISIT(ChooseExpr, {})
   DEF_STMT_VISIT(ConvertVectorExpr, {})
   DEF_STMT_VISIT(CXXNoexceptExpr, {})
   DEF_STMT_VISIT(ExpressionTraitExpr, {
-                   calcHash(S->getTrait());
+                   CalcHash(S->getTrait());
                  })
   DEF_STMT_VISIT(ShuffleVectorExpr, {})
   DEF_STMT_VISIT(PredefinedExpr, {
-                   calcHash(S->getIdentType());
+                   CalcHash(S->getIdentType());
                  })
   DEF_STMT_VISIT(TypeTraitExpr, {
-                   calcHash(S->getTrait());
+                   CalcHash(S->getTrait());
                  })
   DEF_STMT_VISIT(VAArgExpr, {})
 
-  // Misc
-  DEF_STMT_VISIT(CXXFoldExpr, {
-                   calcHash(S->isRightFold());
-                   calcHash(S->getOperator());
-                 })
-  DEF_STMT_VISIT(StmtExpr, {})
-  DEF_STMT_VISIT(ExprWithCleanups, {})
-  DEF_STMT_VISIT(GenericSelectionExpr, {
-                   calcHash(S->getNumAssocs());
-                 })
-  DEF_STMT_VISIT(LambdaExpr, {
-                   for (const LambdaCapture& C : S->captures()) {
-                     calcHash(C.isPackExpansion());
-                     calcHash(C.getCaptureKind());
-                   }
-                   calcHash(S->isGenericLambda());
-                   calcHash(S->isMutable());
-                   calcHash(S->getCallOperator()->param_size());
-                 })
-  DEF_STMT_VISIT(OpaqueValueExpr, {
-                   IgnoreClassHash = true;
-                 })
-  DEF_STMT_VISIT(MaterializeTemporaryExpr, {
-                   IgnoreClassHash = true;
-                 })
-  DEF_STMT_VISIT(SubstNonTypeTemplateParmExpr, {})
-  DEF_STMT_VISIT(SubstNonTypeTemplateParmPackExpr, {})
-  DEF_STMT_VISIT(DeclStmt, {
-                   auto numDecls = std::distance(S->decl_begin(),
-                                                        S->decl_end());
-                   calcHash(537u + static_cast<unsigned>(numDecls));
-                 })
-
-  DEF_STMT_VISIT(CompoundAssignOperator, {})
-  DEF_STMT_VISIT(CXXBindTemporaryExpr, {})
-  DEF_STMT_VISIT(NullStmt, {})
-  DEF_STMT_VISIT(CXXScalarValueInitExpr, {})
-  DEF_STMT_VISIT(ImplicitValueInitExpr, {})
-  DEF_STMT_VISIT(OffsetOfExpr, {})
-  DEF_STMT_VISIT(SizeOfPackExpr, {})
-  DEF_STMT_VISIT(DeclRefExpr, {})
-  DEF_STMT_VISIT(DependentScopeDeclRefExpr, {})
-  DEF_STMT_VISIT(CXXPseudoDestructorExpr, {})
-  DEF_STMT_VISIT(FunctionParmPackExpr, {})
-  DEF_STMT_VISIT(ParenListExpr, {})
-  DEF_STMT_VISIT(PackExpansionExpr, {})
-  DEF_STMT_VISIT(UnaryExprOrTypeTraitExpr, {})
-  DEF_STMT_VISIT(AsmStmt, {})
-  DEF_STMT_VISIT(GCCAsmStmt, {
-                   calcHash(S->isVolatile());
-                   calcHash(S->isSimple());
-                   calcHash(S->getAsmString());
-                   calcHash(S->getNumOutputs());
-                   for (unsigned I = 0, N = S->getNumOutputs(); I != N; ++I) {
-                     calcHash(S->getOutputName(I));
-                     VisitStringLiteral(S->getOutputConstraintLiteral(I));
-                   }
-                   calcHash(S->getNumInputs());
-                   for (unsigned I = 0, N = S->getNumInputs(); I != N; ++I) {
-                     calcHash(S->getInputName(I));
-                     calcHash(S->getInputConstraintLiteral(I));
-                   }
-                   calcHash(S->getNumClobbers());
-                   for (unsigned I = 0, N = S->getNumClobbers(); I != N; ++I)
-                     calcHash(S->getClobberStringLiteral(I));})
-  DEF_STMT_VISIT(MSAsmStmt, {})
-  DEF_STMT_VISIT(CXXForRangeStmt, {})
-  DEF_STMT_VISIT(CapturedStmt, {})
-  DEF_STMT_VISIT(CoreturnStmt, {})
-  DEF_STMT_VISIT(CoroutineBodyStmt, {})
-  DEF_STMT_VISIT(CoroutineSuspendExpr, {})
-  DEF_STMT_VISIT(AttributedStmt, {})
-  DEF_STMT_VISIT(BlockExpr, {})
-  DEF_STMT_VISIT(CoawaitExpr, {})
-  DEF_STMT_VISIT(CoyieldExpr, {})
-  DEF_STMT_VISIT(CUDAKernelCallExpr, {})
-  DEF_STMT_VISIT(CXXUuidofExpr, {})
-  DEF_STMT_VISIT(ExtVectorElementExpr, {})
-  DEF_STMT_VISIT(CXXDependentScopeMemberExpr, {})
-  DEF_STMT_VISIT(CXXTypeidExpr, {})
-  DEF_STMT_VISIT(PseudoObjectExpr, {})
-
-
-  // MS properties
+  //--- MS properties --------------------------------------------------------//
   DEF_STMT_VISIT(MSPropertyRefExpr, {})
   DEF_STMT_VISIT(MSPropertySubscriptExpr, {})
 
-  // Calls
+  //--- Calls ----------------------------------------------------------------//
   DEF_STMT_VISIT(CXXOperatorCallExpr, {
-                   calcHash(S->getOperator());
+                   CalcHash(S->getOperator());
                  })
   DEF_STMT_VISIT(CXXMemberCallExpr, {})
   DEF_STMT_VISIT(CallExpr, {})
 
-  // Invalid code
+  //--- Invalid code ---------------------------------------------------------//
+  // We don't support hasing invalid code, so we skip all Stmts representing
+  // invalid code.
   DEF_STMT_VISIT(TypoExpr, {
-                   return skip();
+                   return Skip();
                  })
   DEF_STMT_VISIT(UnresolvedLookupExpr, {
-                   return skip();
+                   return Skip();
                  })
   DEF_STMT_VISIT(UnresolvedMemberExpr, {
-                   return skip();
+                   return Skip();
                  })
   DEF_STMT_VISIT(CXXUnresolvedConstructExpr, {
-                   return skip();
+                   return Skip();
                  })
   DEF_STMT_VISIT(OverloadExpr, {
-                   return skip();
+                   return Skip();
                  })
 
-  // Exceptions
+  //--- Exceptions -----------------------------------------------------------//
   DEF_STMT_VISIT(CXXThrowExpr, {})
   DEF_STMT_VISIT(CXXCatchStmt, {
                    if (S->getExceptionDecl())
-                     calcHash(355);
+                     CalcHash(829);
                  })
   DEF_STMT_VISIT(CXXTryStmt, {})
   DEF_STMT_VISIT(SEHExceptStmt, {})
@@ -296,7 +260,7 @@ namespace {
   DEF_STMT_VISIT(SEHLeaveStmt, {})
   DEF_STMT_VISIT(SEHTryStmt, {})
 
-  // Literals
+  //--- Literals -------------------------------------------------------------//
   DEF_STMT_VISIT(CharacterLiteral, {
                    // We treat all literals as integer literals
                    // as the hash is type independent
@@ -325,17 +289,17 @@ namespace {
   DEF_STMT_VISIT(GNUNullExpr, {})
   DEF_STMT_VISIT(CXXNullPtrLiteralExpr, {})
 
-  // TODO
-  DEF_STMT_VISIT(UserDefinedLiteral, {})
+  // TODO implement hashing for this
+  DEF_STMT_VISIT(UserDefinedLiteral, { return Skip(); })
 
-  // OOP
+  //--- C++-OOP Stmts --------------------------------------------------------//
   DEF_STMT_VISIT(MemberExpr, {})
   DEF_STMT_VISIT(CXXNewExpr, {})
   DEF_STMT_VISIT(CXXThisExpr, {})
   DEF_STMT_VISIT(CXXConstructExpr, {})
   DEF_STMT_VISIT(CXXDeleteExpr, {
-                   calcHash(S->isArrayFormAsWritten());
-                   calcHash(S->isGlobalDelete());
+                   CalcHash(S->isArrayFormAsWritten());
+                   CalcHash(S->isGlobalDelete());
                  })
   DEF_STMT_VISIT(DesignatedInitExpr, {})
   DEF_STMT_VISIT(DesignatedInitUpdateExpr, {})
@@ -349,7 +313,7 @@ namespace {
   DEF_STMT_VISIT(CXXDefaultArgExpr, {})
   DEF_STMT_VISIT(CXXDefaultInitExpr, {})
 
-  // Casts
+  //--- Casts ----------------------------------------------------------------//
   DEF_STMT_VISIT(CXXFunctionalCastExpr, {})
 
   DEF_STMT_VISIT(CXXNamedCastExpr, {})
@@ -366,34 +330,34 @@ namespace {
   DEF_STMT_VISIT(ExplicitCastExpr, {})
   DEF_STMT_VISIT(CStyleCastExpr, {})
   DEF_STMT_VISIT(ObjCBridgedCastExpr, {
-                   calcHash(S->getBridgeKind());
+                   CalcHash(S->getBridgeKind());
                  })
 
-  // Exprs
+  //--- Miscellaneous Exprs --------------------------------------------------//
   DEF_STMT_VISIT(Expr, {})
   DEF_STMT_VISIT(ParenExpr, {})
   DEF_STMT_VISIT(ArraySubscriptExpr, {})
   DEF_STMT_VISIT(BinaryOperator, {
-                   calcHash(S->getOpcode());
+                   CalcHash(S->getOpcode());
                  })
   DEF_STMT_VISIT(UnaryOperator, {
-                   calcHash(S->getOpcode());
+                   CalcHash(S->getOpcode());
                  })
 
-  // Control flow
+  //--- Control flow ---------------------------------------------------------//
   DEF_STMT_VISIT(ForStmt, {})
   DEF_STMT_VISIT(GotoStmt, {})
   DEF_STMT_VISIT(IfStmt, {})
   DEF_STMT_VISIT(WhileStmt, {})
   DEF_STMT_VISIT(IndirectGotoStmt, {})
   DEF_STMT_VISIT(LabelStmt, {
-                   calcHash(S->getDecl()->getName());
+                   CalcHash(S->getDecl()->getName());
                  })
   DEF_STMT_VISIT(MSDependentExistsStmt, {
-                   calcHash(S->isIfExists());
+                   CalcHash(S->isIfExists());
                  })
   DEF_STMT_VISIT(AddrLabelExpr, {
-                   calcHash(S->getLabel()->getName());
+                   CalcHash(S->getLabel()->getName());
                  })
   DEF_STMT_VISIT(BreakStmt, {})
   DEF_STMT_VISIT(CompoundStmt, {})
@@ -412,26 +376,26 @@ namespace {
   DEF_STMT_VISIT(ConditionalOperator, {})
 
 
-  // Objective C
+  //--- Objective-C ----------------------------------------------------------//
   DEF_STMT_VISIT(ObjCArrayLiteral, {})
   DEF_STMT_VISIT(ObjCBoxedExpr, {})
   DEF_STMT_VISIT(ObjCDictionaryLiteral, {})
   DEF_STMT_VISIT(ObjCEncodeExpr, {})
   DEF_STMT_VISIT(ObjCIndirectCopyRestoreExpr, {
-                   calcHash(S->shouldCopy());
+                   CalcHash(S->shouldCopy());
                  })
   DEF_STMT_VISIT(ObjCIsaExpr, {})
   DEF_STMT_VISIT(ObjCIvarRefExpr, {})
   DEF_STMT_VISIT(ObjCMessageExpr, {})
   DEF_STMT_VISIT(ObjCPropertyRefExpr, {
-                   calcHash(S->isSuperReceiver());
-                   calcHash(S->isImplicitProperty());
+                   CalcHash(S->isSuperReceiver());
+                   CalcHash(S->isImplicitProperty());
                  })
   DEF_STMT_VISIT(ObjCProtocolExpr, {})
   DEF_STMT_VISIT(ObjCSelectorExpr, {})
   DEF_STMT_VISIT(ObjCSubscriptRefExpr, {})
   DEF_STMT_VISIT(ObjCAtCatchStmt, {
-                   calcHash(S->hasEllipsis());
+                   CalcHash(S->hasEllipsis());
                  })
   DEF_STMT_VISIT(ObjCAtFinallyStmt, {})
   DEF_STMT_VISIT(ObjCAtSynchronizedStmt, {})
@@ -440,8 +404,94 @@ namespace {
   DEF_STMT_VISIT(ObjCAutoreleasePoolStmt, {})
   DEF_STMT_VISIT(ObjCForCollectionStmt, {})
 
+  //--- Miscellaneous Stmts --------------------------------------------------//
+  DEF_STMT_VISIT(CXXFoldExpr, {
+                   CalcHash(S->isRightFold());
+                   CalcHash(S->getOperator());
+                 })
+  DEF_STMT_VISIT(StmtExpr, {})
+  DEF_STMT_VISIT(ExprWithCleanups, {})
+  DEF_STMT_VISIT(GenericSelectionExpr, {
+                   CalcHash(S->getNumAssocs());
+                 })
+  DEF_STMT_VISIT(LambdaExpr, {
+                   for (const LambdaCapture& C : S->captures()) {
+                     CalcHash(C.isPackExpansion());
+                     CalcHash(C.getCaptureKind());
+                   }
+                   CalcHash(S->isGenericLambda());
+                   CalcHash(S->isMutable());
+                   CalcHash(S->getCallOperator()->param_size());
+                 })
+  DEF_STMT_VISIT(OpaqueValueExpr, {
+                   IgnoreClassHash = true;
+                 })
+  DEF_STMT_VISIT(MaterializeTemporaryExpr, {
+                   IgnoreClassHash = true;
+                 })
+  DEF_STMT_VISIT(SubstNonTypeTemplateParmExpr, {})
+  DEF_STMT_VISIT(SubstNonTypeTemplateParmPackExpr, {})
+  DEF_STMT_VISIT(DeclStmt, {
+                   auto numDecls = std::distance(S->decl_begin(),
+                                                        S->decl_end());
+                   CalcHash(537u + static_cast<unsigned>(numDecls));
+                 })
 
-  // OpenMP
+  DEF_STMT_VISIT(CompoundAssignOperator, {})
+  DEF_STMT_VISIT(CXXBindTemporaryExpr, {})
+  DEF_STMT_VISIT(NullStmt, {})
+  DEF_STMT_VISIT(CXXScalarValueInitExpr, {})
+  DEF_STMT_VISIT(ImplicitValueInitExpr, {})
+  DEF_STMT_VISIT(OffsetOfExpr, {})
+  DEF_STMT_VISIT(SizeOfPackExpr, {})
+  DEF_STMT_VISIT(DeclRefExpr, {})
+  DEF_STMT_VISIT(DependentScopeDeclRefExpr, {})
+  DEF_STMT_VISIT(CXXPseudoDestructorExpr, {})
+  DEF_STMT_VISIT(FunctionParmPackExpr, {})
+  DEF_STMT_VISIT(ParenListExpr, {})
+  DEF_STMT_VISIT(PackExpansionExpr, {})
+  DEF_STMT_VISIT(UnaryExprOrTypeTraitExpr, {})
+  DEF_STMT_VISIT(PseudoObjectExpr, {})
+  DEF_STMT_VISIT(GCCAsmStmt, {
+                   CalcHash(S->isVolatile());
+                   CalcHash(S->isSimple());
+                   CalcHash(S->getAsmString()->getString());
+                   CalcHash(S->getNumOutputs());
+                   for (unsigned I = 0, N = S->getNumOutputs(); I != N; ++I) {
+                     CalcHash(S->getOutputName(I));
+                     VisitStringLiteral(S->getOutputConstraintLiteral(I));
+                   }
+                   CalcHash(S->getNumInputs());
+                   for (unsigned I = 0, N = S->getNumInputs(); I != N; ++I) {
+                     CalcHash(S->getInputName(I));
+                     CalcHash(S->getInputConstraintLiteral(I));
+                   }
+                   CalcHash(S->getNumClobbers());
+                   for (unsigned I = 0, N = S->getNumClobbers(); I != N; ++I)
+                     CalcHash(S->getClobberStringLiteral(I));})
+
+  // TODO: implement hashing custom data of these Stmts
+  DEF_STMT_VISIT(AsmStmt, {})
+  DEF_STMT_VISIT(MSAsmStmt, {})
+  DEF_STMT_VISIT(CXXForRangeStmt, {})
+  DEF_STMT_VISIT(CapturedStmt, {})
+  DEF_STMT_VISIT(CoreturnStmt, {})
+  DEF_STMT_VISIT(CoroutineBodyStmt, {})
+  DEF_STMT_VISIT(CoroutineSuspendExpr, {})
+  DEF_STMT_VISIT(AttributedStmt, {})
+  DEF_STMT_VISIT(BlockExpr, {})
+  DEF_STMT_VISIT(CoawaitExpr, {})
+  DEF_STMT_VISIT(CoyieldExpr, {})
+  DEF_STMT_VISIT(CUDAKernelCallExpr, {})
+  DEF_STMT_VISIT(CXXUuidofExpr, {})
+  DEF_STMT_VISIT(ExtVectorElementExpr, {})
+  DEF_STMT_VISIT(CXXDependentScopeMemberExpr, {})
+  DEF_STMT_VISIT(CXXTypeidExpr, {})
+
+
+  //--- OpenMP ---------------------------------------------------------------//
+  // All OMP Stmts don't have any data attached to them,
+  // so we can just use the default code.
   DEF_STMT_VISIT(OMPExecutableDirective, {})
   DEF_STMT_VISIT(OMPAtomicDirective, {})
   DEF_STMT_VISIT(OMPBarrierDirective, {})

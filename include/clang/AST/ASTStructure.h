@@ -20,13 +20,13 @@
 
 namespace clang {
 
-/// ASTStructure - This class analyses the structure of the nodes
+/// ASTStructure - This class analyses the structure of the Stmts
 /// in a given AST and is intended to be used to find sub-trees with identical
 /// structure. The structure of a tree equals the functionality of the
 /// code behind it.
 ///
 /// Specifically this class provides a locality-sensitive hash function
-/// for AST nodes that generates colliding hash values
+/// for Stmts that generates colliding hash values
 /// for nodes with the same structure.
 ///
 /// This is done by only hashing
@@ -40,12 +40,12 @@ class ASTStructure {
 
 public:
   ///
-  /// \brief ASTStructure Analyses the given AST
+  /// \brief ASTStructure generates information about the Stmts in the AST.
   ///
   /// \param Context The AST that shall be analyzed.
   ///
-  /// Analyses the given AST and stores all information
-  /// about its structure in the newly created ASTStructure object.
+  /// Analyses the Stmts in the given AST and stores all information
+  /// about their structure in the newly created ASTStructure object.
   explicit ASTStructure(ASTContext& Context);
 
   struct HashSearchResult {
@@ -53,6 +53,18 @@ public:
     bool Success;
   };
 
+  ///
+  /// \brief Looks up the structure hash code for the given Stmt
+  ///        in the storage of this ASTStructure object.
+  ///
+  /// \param S the given Stmt.
+  ///
+  /// \returns A \c HashSearchResult containing information of whether
+  ///          the search was successful and if yes the found hash code.
+  ///
+  /// The structure hash code is a integer describing the structure
+  /// of the given Stmt. Stmts with an equal structure hash code probably
+  /// have the same structure.
   HashSearchResult findHash(const Stmt *S) {
     auto I = HashedStmts.find(S);
     if (I == HashedStmts.end()) {
@@ -60,17 +72,14 @@ public:
     }
     return {I->second, true};
   }
-
-  unsigned getHash(const Stmt *S) {
-    auto I = HashedStmts.find(S);
-    if (I == HashedStmts.end()) {
-      assert("getHash(const Stmt *D) called on unknown Stmt");
-    }
-    return I->second;
-  }
-
-  void add(unsigned Hash, const Stmt *Stmt) {
-    HashedStmts.insert(std::make_pair(Stmt, Hash));
+  ///
+  /// \brief Adds with the given Stmt with the associated structure hash code
+  ///        to the storage of this ASTStructure object.
+  ///
+  /// \param Hash the hash code of the given Stmt.
+  /// \param S the given Stmt.
+  void add(unsigned Hash, const Stmt *S) {
+    HashedStmts.insert(std::make_pair(S, Hash));
   }
 };
 
