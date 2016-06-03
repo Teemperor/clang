@@ -1169,9 +1169,6 @@ public:
     return getDecomposedLoc(SpellingLoc).second;
   }
 
-
-  //
-
   /// \brief Tests whether the given source location is expanded from any
   /// macro body.
   ///
