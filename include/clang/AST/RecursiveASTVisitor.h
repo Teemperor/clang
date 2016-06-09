@@ -586,7 +586,6 @@ bool RecursiveASTVisitor<Derived>::PostVisitStmt(Stmt *S) {
 template <typename Derived>
 bool RecursiveASTVisitor<Derived>::TraverseStmt(Stmt *S,
                                                 DataRecursionQueue *Queue) {
-
   if (!S)
     return true;
 
