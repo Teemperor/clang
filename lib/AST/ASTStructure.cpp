@@ -37,13 +37,13 @@ public:
 
   bool shouldTraversePostOrder() const { return true; }
 
-  bool PostVisitStmt(Stmt *S) {
+  bool VisitStmt(Stmt *S) {
     // At this point we know that all Visit* calls for the previous Stmt have
     // finished, so we know save the calculated hash before starting
     // to calculate the next hash.
     SaveCurrentHash();
 
-    // PostVisitStmt is the first method to be called for a new
+    // VisitStmt is the first method to be called for a new
     // Stmt, so we save what Stmt we are currently processing
     // for SaveCurrentHash.
     CurrentStmt = S;
@@ -71,8 +71,8 @@ public:
     return true;
   }
 
-// Define all PostVisit methods for all possible Stmts.
-#define STMT(CLASS, PARENT) bool PostVisit##CLASS(CLASS *S);
+// Define all Visit methods for all possible Stmts.
+#define STMT(CLASS, PARENT) bool Visit##CLASS(CLASS *S);
 #include "clang/AST/StmtNodes.inc"
 
 private:
@@ -164,7 +164,7 @@ private:
 };
 
 #define DEF_STMT_VISIT(CLASS, CODE)                                            \
-  bool StructuralHashVisitor::PostVisit##CLASS(CLASS *S) {                     \
+  bool StructuralHashVisitor::Visit##CLASS(CLASS *S) {                     \
     if (SkipHash)                                                              \
       return true;                                                             \
     { CODE; }                                                                  \

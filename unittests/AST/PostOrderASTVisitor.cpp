@@ -34,32 +34,32 @@ namespace {
 
     bool shouldTraversePostOrder() const { return VisitPostOrder; }
 
-    bool PostVisitBinaryOperator(BinaryOperator *Op) {
+    bool VisitBinaryOperator(BinaryOperator *Op) {
       VisitedNodes.push_back(Op->getOpcodeStr());
       return true;
     }
 
-    bool PostVisitIntegerLiteral(IntegerLiteral *Lit) {
+    bool VisitIntegerLiteral(IntegerLiteral *Lit) {
       VisitedNodes.push_back(Lit->getValue().toString(10, false));
       return true;
     }
 
-    bool PostVisitCXXMethodDecl(CXXMethodDecl *D) {
+    bool VisitCXXMethodDecl(CXXMethodDecl *D) {
       VisitedNodes.push_back(D->getQualifiedNameAsString());
       return true;
     }
 
-    bool PostVisitReturnStmt(Stmt *S) {
+    bool VisitReturnStmt(Stmt *S) {
       VisitedNodes.push_back("return");
       return true;
     }
 
-    bool PostVisitCXXRecordDecl(CXXRecordDecl *Declaration) {
+    bool VisitCXXRecordDecl(CXXRecordDecl *Declaration) {
       VisitedNodes.push_back(Declaration->getQualifiedNameAsString());
       return true;
     }
 
-    bool PostVisitTemplateTypeParmType(TemplateTypeParmType *T) {
+    bool VisitTemplateTypeParmType(TemplateTypeParmType *T) {
       VisitedNodes.push_back(T->getDecl()->getQualifiedNameAsString());
       return true;
     }
@@ -92,7 +92,7 @@ TEST(RecursiveASTVisitor, PostOrderTraversal) {
   }
 }
 
-TEST(RecursiveASTVisitor, DeactivatePostOrderTraversal) {
+TEST(RecursiveASTVisitor, NoPostOrderTraversal) {
   auto ASTUnit = tooling::buildASTFromCode(
     "template <class T> class A {"
     "  class B {"
@@ -101,12 +101,18 @@ TEST(RecursiveASTVisitor, DeactivatePostOrderTraversal) {
     "};"
   );
   auto TU = ASTUnit->getASTContext().getTranslationUnitDecl();
-  // We try to traverse the translation unit but with deactivated
-  // post order calls.
+  // We traverse the translation unit and store all
+  // visited nodes.
   RecordingVisitor Visitor(false);
   Visitor.TraverseTranslationUnitDecl(TU);
 
-  // We deactivated postorder traversal, so we shouldn't have
-  // recorded any nodes.
-  ASSERT_TRUE(Visitor.VisitedNodes.empty());
+  std::vector<std::string> expected = {
+    "A", "A::B", "A::B::foo", "return", "+", "1", "2", "A::T"
+  };
+  // Compare the list of actually visited nodes
+  // with the expected list of visited nodes.
+  ASSERT_EQ(expected.size(), Visitor.VisitedNodes.size());
+  for (std::size_t I = 0; I < expected.size(); I++) {
+    ASSERT_EQ(expected[I], Visitor.VisitedNodes[I]);
+  }
 }
