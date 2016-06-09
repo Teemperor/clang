@@ -921,7 +921,7 @@ bool RecursiveASTVisitor<Derived>::TraverseLambdaBody(
       TRY_TO(WalkUpFrom##TYPE(T));                                             \
     { CODE; }                                                                  \
     if (getDerived().shouldTraversePostOrder())                                \
-      TRY_TO(WalkUpFrom##TYPE(T));                                         \
+      TRY_TO(WalkUpFrom##TYPE(T));                                             \
     return true;                                                               \
   }
 
@@ -1332,7 +1332,7 @@ bool RecursiveASTVisitor<Derived>::TraverseDeclContextHelper(DeclContext *DC) {
     if (ReturnValue && ShouldVisitChildren)                                    \
       TRY_TO(TraverseDeclContextHelper(dyn_cast<DeclContext>(D)));             \
     if (ReturnValue && getDerived().shouldTraversePostOrder())                 \
-      TRY_TO(WalkUpFrom##DECL(D));                                         \
+      TRY_TO(WalkUpFrom##DECL(D));                                             \
     return ReturnValue;                                                        \
   }
 
