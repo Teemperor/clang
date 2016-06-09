@@ -1990,7 +1990,7 @@ DEF_TRAVERSE_DECL(ParmVarDecl, {
       }                                                                        \
     }                                                                          \
     if (!Queue && ReturnValue && getDerived().shouldTraversePostOrder())       \
-      TRY_TO(WalkUpFrom##STMT(S));                                         \
+      TRY_TO(WalkUpFrom##STMT(S));                                             \
     return ReturnValue;                                                        \
   }
 
@@ -2137,9 +2137,11 @@ template <typename Derived>
 bool RecursiveASTVisitor<Derived>::TraverseSynOrSemInitListExpr(
     InitListExpr *S, DataRecursionQueue *Queue) {
   if (S) {
-
+    // Skip this if we traverse postorder. We will visit it later
+    // in PostVisitStmt.
     if (!getDerived().shouldTraversePostOrder())
       TRY_TO(WalkUpFromInitListExpr(S));
+
     // All we need are the default actions.  FIXME: use a helper function.
     for (Stmt *SubStmt : S->children()) {
       TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(SubStmt);
