@@ -23,23 +23,19 @@
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/Lex/Lexer.h"
+#include "clang/AST/ASTStructure.h"
 
 using namespace clang;
 using namespace ento;
-
-//===----------------------------------------------------------------------===//
-// BasicCloneDetectionChecker
-//===----------------------------------------------------------------------===//
-
 namespace {
-class BasicCloneChecker : public Checker<check::EndOfTranslationUnit> {
+class CopyPasteChecker: public Checker<check::EndOfTranslationUnit> {
 public:
   void checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
                                  AnalysisManager &Mgr, BugReporter &BR) const;
 };
 } // end anonymous namespace
 
-void BasicCloneChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
+void CopyPasteChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
                                                   AnalysisManager &Mgr,
                                                   BugReporter &BR) const {
   ASTStructure Structure(TU->getASTContext());
@@ -57,7 +53,7 @@ void BasicCloneChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
       SourceLocation WarnLoc = Clone.result.FeatureThis.getLocation();
       SourceLocation NoteLoc = Clone.result.FeatureOther.getLocation();
 
-      DiagEngine.Report(WarnLoc, WarnID) << "Possibly wrong copy-pasted code";
+      DiagEngine.Report(WarnLoc, WarnID) << "Possibly faulty copy-pasted code";
 
       DiagEngine.Report(NoteLoc, NoteID) << "Copy-paste source was here";
 

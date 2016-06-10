@@ -49,6 +49,7 @@ public:
     CurrentStmt = S;
     // Reset the initial hash code for this Stmt.
     Hash = 0;
+    Children = 1;
     ClassHash = S->getStmtClass();
     // Reset options for the current hash code.
     SkipHash = false;
@@ -63,8 +64,15 @@ public:
       if (Child == nullptr) {
         // We use an placeholder value for missing children.
         CalcHash(313);
+        ++Children;
       } else {
         CalcHash(Child);
+        ASTStructure::HashSearchResult Result = SH.findHash(Child);
+        if (Result.Success) {
+          Children += Result.Data.Children;
+        } else {
+          ++Children;
+        }
       }
     }
 
@@ -118,7 +126,7 @@ private:
   void CalcHash(Stmt *S) {
     auto I = SH.findHash(S);
     if (I.Success) {
-      CalcHash(I.Hash);
+      CalcHash(I.Data.Hash);
     }
   }
 
@@ -131,7 +139,7 @@ private:
     if (!IgnoreClassHash) {
       Hash += ClassHash;
     }
-    SH.add(Hash, CurrentStmt);
+    SH.add(Hash, Children, CurrentStmt);
     CurrentStmt = nullptr;
   }
 
@@ -150,6 +158,9 @@ private:
 
   // The hash value that is calculated right now.
   unsigned Hash;
+
+  // The number of children of the current stmt
+  unsigned Children;
 
   // If true, the current Hash only depends on custom data of the
   // current Stmt and the child values.
@@ -463,51 +474,78 @@ ASTStructure::ASTStructure(ASTContext &Context) {
   visitor.TraverseDecl(Context.getTranslationUnitDecl());
 }
 
+
+namespace {
+class FeatureCollectVisitor
+    : public RecursiveASTVisitor<FeatureCollectVisitor> {
+
+public:
+ StmtFeature& Feature;
+
+  FeatureCollectVisitor(StmtFeature &Feature) : Feature(Feature) {
+
+  }
+
+  bool VisitNamedDecl(NamedDecl *D) {
+    Feature.add(D->getQualifiedNameAsString(), D->getLocStart(),
+                StmtFeature::StmtFeatureKind::NamedDecl);
+    return true;
+  }
+};
+}
+
 StmtFeature::StmtFeature(Stmt *S) {
 }
 
+void StmtFeature::add(const std::string &Name, SourceLocation Loc, StmtFeatureKind Kind) {
+
+}
+
 namespace {
-  class CompareDataVisitor
-      : public RecursiveASTVisitor<CompareDataVisitor> {
+class CompareDataVisitor
+    : public RecursiveASTVisitor<CompareDataVisitor> {
 
-  public:
+public:
 
-    std::vector<unsigned> Data;
+  std::vector<unsigned> Data;
 
-    bool VisitStmt(Stmt *S) {
-      Data.push_back(S->getStmtClass());
-      return true;
-    }
-
-  };
-
-  bool CheckStmtEquality(Stmt *S1, Stmt *S2) {
-    CompareDataVisitor Visitor1;
-    CompareDataVisitor Visitor2;
-
-    Visitor1.TraverseStmt(S1);
-    Visitor2.TraverseStmt(S2);
-
-    return Visitor1.Data == Visitor2.Data;
+  bool VisitStmt(Stmt *S) {
+    Data.push_back(S->getStmtClass());
+    return true;
   }
 
-  void SearchForCloneErrors(std::vector<StmtFeature::CompareResult>& output,
-                            std::vector<Stmt *>& Group) {
-    for (Stmt *CurrentStmt : Group) {
-      for (Stmt *OtherStmt : Group) {
-        if (CheckStmtEquality(CurrentStmt, OtherStmt)) {
-          StmtFeature CurrentFeature(CurrentStmt);
-          StmtFeature OtherFeature(OtherStmt);
-          StmtFeature::CompareResult CompareResult =
-              CurrentFeature.compare(OtherFeature);
-          assert(!CompareResult.result.Incompatible);
-          if (!CompareResult.result.Success) {
-            output.push_back(CompareResult);
-          }
+};
+
+bool CheckStmtEquality(Stmt *S1, Stmt *S2) {
+  CompareDataVisitor Visitor1;
+  CompareDataVisitor Visitor2;
+
+  Visitor1.TraverseStmt(S1);
+  Visitor2.TraverseStmt(S2);
+
+  return Visitor1.Data == Visitor2.Data;
+}
+
+void SearchForCloneErrors(std::vector<StmtFeature::CompareResult>& output,
+                          std::vector<Stmt *>& Group) {
+  for (std::size_t I1 = 0; I1 < Group.size(); ++I1) {
+      for (std::size_t I2 = I1 + 1; I2 < Group.size(); ++I2) {
+      Stmt *CurrentStmt = Group[I1];
+      Stmt *OtherStmt = Group[I2];
+
+      if (CheckStmtEquality(CurrentStmt, OtherStmt)) {
+        StmtFeature CurrentFeature(CurrentStmt);
+        StmtFeature OtherFeature(OtherStmt);
+        StmtFeature::CompareResult CompareResult =
+            CurrentFeature.compare(OtherFeature);
+        assert(!CompareResult.result.Incompatible);
+        if (!CompareResult.result.Success) {
+          output.push_back(CompareResult);
         }
       }
     }
   }
+}
 }
 
 std::vector<StmtFeature::CompareResult> ASTStructure::findCloneErrors() {
@@ -516,7 +554,9 @@ std::vector<StmtFeature::CompareResult> ASTStructure::findCloneErrors() {
   std::map<unsigned, std::vector<Stmt *> > GroupsByHash;
 
   for (auto& Pair : HashedStmts) {
-    GroupsByHash[Pair.second].push_back(Pair.first);
+    if (Pair.second.Children > 5) {
+      GroupsByHash[Pair.second.Hash].push_back(Pair.first);
+    }
   }
 
   for (auto& HashGroupPair : GroupsByHash) {

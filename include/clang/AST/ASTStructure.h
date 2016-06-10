@@ -97,14 +97,15 @@ public:
 class StmtFeature {
 
 public:
+  // TODO More than just named decl support
   enum StmtFeatureKind {
-    Variable = 0,
-    Function,
-    Literal,
+    NamedDecl = 0,
     END
   };
 
   StmtFeature(Stmt *S);
+
+  void add(const std::string& Name, SourceLocation Loc, StmtFeatureKind Kind);
 
   struct CompareResult {
     StmtFeatureKind MismatchKind;
@@ -144,9 +145,20 @@ private:
 /// and other parts of the program are ignored.
 class ASTStructure {
 
-  std::unordered_map<Stmt *, unsigned> HashedStmts;
-
 public:
+
+  struct StmtData {
+    unsigned Hash;
+    unsigned Children;
+    StmtData() {
+    }
+
+    StmtData(unsigned Hash, unsigned Children)
+      : Hash(Hash), Children(Children) {
+    }
+  };
+
+
   ///
   /// \brief ASTStructure generates information about the Stmts in the AST.
   ///
@@ -157,7 +169,7 @@ public:
   explicit ASTStructure(ASTContext &Context);
 
   struct HashSearchResult {
-    unsigned Hash;
+    StmtData Data;
     bool Success;
   };
 
@@ -176,7 +188,7 @@ public:
   HashSearchResult findHash(Stmt *S) {
     auto I = HashedStmts.find(S);
     if (I == HashedStmts.end()) {
-      return {0, false};
+      return {StmtData(), false};
     }
     return {I->second, true};
   }
@@ -185,12 +197,17 @@ public:
   ///        to the storage of this ASTStructure object.
   ///
   /// \param Hash the hash code of the given Stmt.
+  /// \param Children the children of this
   /// \param S the given Stmt.
-  void add(unsigned Hash, Stmt *S) {
-    HashedStmts.insert(std::make_pair(S, Hash));
+  void add(unsigned Hash, unsigned Children, Stmt *S) {
+    HashedStmts.insert(std::make_pair(S, StmtData(Hash, Children)));
   }
 
   std::vector<StmtFeature::CompareResult> findCloneErrors();
+
+private:
+  std::unordered_map<Stmt *, StmtData> HashedStmts;
+
 };
 
 } // end namespace clang

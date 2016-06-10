@@ -114,7 +114,7 @@ bool compareStructure(const std::string &DeclNameA,
   auto HashSearchB = HashB.findHash(FinderB.getDecl()->getBody());
   assert(HashSearchA.Success);
   assert(HashSearchB.Success);
-  return HashSearchA.Hash == HashSearchB.Hash;
+  return HashSearchA.Data.Hash == HashSearchB.Data.Hash;
 }
 
 // Returns true if the given Stmts
