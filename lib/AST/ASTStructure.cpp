@@ -462,3 +462,68 @@ ASTStructure::ASTStructure(ASTContext &Context) {
   StructuralHashVisitor visitor(*this, Context);
   visitor.TraverseDecl(Context.getTranslationUnitDecl());
 }
+
+StmtFeature::StmtFeature(Stmt *S) {
+}
+
+namespace {
+  class CompareDataVisitor
+      : public RecursiveASTVisitor<CompareDataVisitor> {
+
+  public:
+
+    std::vector<unsigned> Data;
+
+    bool VisitStmt(Stmt *S) {
+      Data.push_back(S->getStmtClass());
+      return true;
+    }
+
+  };
+
+  bool CheckStmtEquality(Stmt *S1, Stmt *S2) {
+    CompareDataVisitor Visitor1;
+    CompareDataVisitor Visitor2;
+
+    Visitor1.TraverseStmt(S1);
+    Visitor2.TraverseStmt(S2);
+
+    return Visitor1.Data == Visitor2.Data;
+  }
+
+  void SearchForCloneErrors(std::vector<StmtFeature::CompareResult>& output,
+                            std::vector<Stmt *>& Group) {
+    for (Stmt *CurrentStmt : Group) {
+      for (Stmt *OtherStmt : Group) {
+        if (CheckStmtEquality(CurrentStmt, OtherStmt)) {
+          StmtFeature CurrentFeature(CurrentStmt);
+          StmtFeature OtherFeature(OtherStmt);
+          StmtFeature::CompareResult CompareResult =
+              CurrentFeature.compare(OtherFeature);
+          assert(!CompareResult.result.Incompatible);
+          if (!CompareResult.result.Success) {
+            output.push_back(CompareResult);
+          }
+        }
+      }
+    }
+  }
+}
+
+std::vector<StmtFeature::CompareResult> ASTStructure::findCloneErrors() {
+  std::vector<StmtFeature::CompareResult> result;
+
+  std::map<unsigned, std::vector<Stmt *> > GroupsByHash;
+
+  for (auto& Pair : HashedStmts) {
+    GroupsByHash[Pair.second].push_back(Pair.first);
+  }
+
+  for (auto& HashGroupPair : GroupsByHash) {
+    if (HashGroupPair.second.size() > 1) {
+      SearchForCloneErrors(result, HashGroupPair.second);
+    }
+  }
+
+  return result;
+}

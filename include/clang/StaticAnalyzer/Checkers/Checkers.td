@@ -75,6 +75,8 @@ def LocalizabilityOptIn : Package<"localizability">, InPackage<CocoaOptIn>;
 def LLVM : Package<"llvm">;
 def Debug : Package<"debug">;
 
+def CloneDetection : Package<"clone">;
+
 //===----------------------------------------------------------------------===//
 // Core Checkers.
 //===----------------------------------------------------------------------===//
@@ -649,3 +651,16 @@ def BugHashDumper : Checker<"DumpBugHash">,
   DescFile<"DebugCheckers.cpp">;
 
 } // end "debug"
+
+//===----------------------------------------------------------------------===//
+// Clone Detection
+//===----------------------------------------------------------------------===//
+
+let ParentPackage = CloneDetection in {
+
+def CopyPasteChecker : Checker<"CopyPasteChecker">,
+  HelpText<"Detect bugs caused by copy pasting.">,
+  DescFile<"CopyPasteChecker.cpp">;
+
+} // end "clone"
+
