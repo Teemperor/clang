@@ -677,3 +677,52 @@ TEST(ASTStructure, ImageTest) {
       } catch (...) { }
     })test"));
 }
+
+
+TEST(FeatureVector, Mismatch) {
+  FeatureVector VectorA, VectorB;
+
+  VectorA.add("x", SourceLocation());
+  VectorA.add("y", SourceLocation());
+  VectorA.add("z", SourceLocation());
+
+  VectorB.add("a", SourceLocation());
+  VectorB.add("b", SourceLocation());
+  VectorB.add("b", SourceLocation()); // need to detect this pattern error
+
+  ASSERT_FALSE(VectorA.compare(VectorB).Success);
+  ASSERT_FALSE(VectorA.compare(VectorB).Incompatible);
+  ASSERT_EQ(2u, VectorA.compare(VectorB).FeatureThis.getNameIndex());
+  ASSERT_EQ(1u, VectorA.compare(VectorB).FeatureOther.getNameIndex());
+}
+
+
+TEST(FeatureVector, Match) {
+  FeatureVector VectorA, VectorB;
+
+  VectorA.add("x", SourceLocation());
+  VectorA.add("y", SourceLocation());
+  VectorA.add("z", SourceLocation());
+
+  VectorB.add("a", SourceLocation());
+  VectorB.add("b", SourceLocation());
+  VectorB.add("c", SourceLocation());
+
+  ASSERT_TRUE(VectorA.compare(VectorB).Success);
+  ASSERT_FALSE(VectorA.compare(VectorB).Incompatible);
+}
+
+
+TEST(FeatureVector, Incompatible) {
+  FeatureVector VectorA, VectorB;
+
+  VectorA.add("x", SourceLocation());
+  VectorA.add("y", SourceLocation());
+  VectorA.add("z", SourceLocation());
+
+  VectorB.add("a", SourceLocation());
+  VectorB.add("b", SourceLocation());
+
+  ASSERT_FALSE(VectorA.compare(VectorB).Success);
+  ASSERT_TRUE(VectorA.compare(VectorB).Incompatible);
+}
