@@ -640,7 +640,17 @@ std::vector<ASTStructure::CloneMismatch> ASTStructure::findCloneErrors() {
           IndexesToRemove.insert(I);
           break;
         }
+        if (I < J) {
+          if (OtherMismatch.MismatchA.getRange() == Mismatch.MismatchA.getRange()
+              || OtherMismatch.MismatchB.getRange() == Mismatch.MismatchB.getRange()
+              || OtherMismatch.MismatchA.getRange() == Mismatch.MismatchB.getRange()
+              || OtherMismatch.MismatchB.getRange() == Mismatch.MismatchA.getRange()) {
+            IndexesToRemove.insert(I);
+            break;
+          }
+        }
       }
+
     }
   }
 

@@ -62,7 +62,7 @@ void CopyPasteChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
       unsigned NoteWithSuggestionID =
           DiagEngine.getCustomDiagID(DiagnosticsEngine::Note,
                                      "Other possibly faulty code clone instance"
-                                     " is here. Maybe you wanted to use %0"
+                                     " is here. Maybe you wanted to use '%0'"
                                      " instead of '%1'?");
 
       SourceLocation LocA = Clone.MismatchA.getStartLocation();

@@ -5,11 +5,43 @@ struct mutex {
   void unlock() {}
 };
 
-mutex m1;
-int m1_global;
+extern mutex m1;
+extern int m1_global;
 
-mutex m2;
-int m2_global;
+extern mutex m2;
+extern int m2_global;
+
+extern int var2_accesses;
+
+int read1_clutter1() {
+  int timer = 0;
+  while(true) {
+    if (m1.try_lock()) {
+      int result = m1_global;
+      m1.unlock();
+      return result;
+    } else {
+      // busy wait
+      timer++;
+    }
+  }
+}
+
+int read2() {
+  var2_accesses++;
+  int timer = 0;
+  while(true) {
+    if (m2.try_lock()) {
+      int result = m2_global;
+      m1.unlock(); // expected-warning{{Possibly faulty code clone. Maybe you wanted to use 'm2' instead of 'm1'?}}
+      return result;
+    } else {
+      // busy wait
+      timer++;
+    }
+  }
+}
+
 
 int read1() {
   int timer = 0;
@@ -26,12 +58,27 @@ int read1() {
 }
 
 
-int read2() {
+int read1_clutter2() {
   int timer = 0;
   while(true) {
-    if (m2.try_lock()) {
-      int result = m2_global;
-      m1.unlock(); // expected-warning{{Possibly faulty code clone. Maybe you wanted to use 'm2' instead of 'm1'?}}
+    if (m1.try_lock()) {
+      int result = m1_global;
+      m1.unlock();
+      return result;
+    } else {
+      // busy wait
+      timer++;
+    }
+  }
+}
+
+
+int read1_clutter3() {
+  int timer = 0;
+  while(true) {
+    if (m1.try_lock()) {
+      int result = m1_global;
+      m1.unlock();
       return result;
     } else {
       // busy wait
