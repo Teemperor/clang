@@ -598,6 +598,8 @@ void SearchForCloneErrors(std::vector<ASTStructure::CloneMismatch>& output,
               ASTStructure::CloneInfo(CurrentStmt, OtherStmt),
               CompareResult.result.FeatureThis,
               CompareResult.result.FeatureOther,
+              CompareResult.FeaturesThis,
+              CompareResult.FeaturesOther,
               CompareResult.MismatchKind
             )
           );

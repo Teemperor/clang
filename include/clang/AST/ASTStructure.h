@@ -53,6 +53,10 @@ public:
   SourceLocation getEndLocation() const {
     return EndLocation;
   }
+
+  SourceRange getRange() const {
+    return SourceRange(getStartLocation(), getEndLocation());
+  }
 };
 
 class FeatureVector {
@@ -67,6 +71,10 @@ public:
   const std::string& getName(std::size_t NameIndex) const {
     assert(getNumberOfNames() > NameIndex);
     return FeatureNames[NameIndex];
+  }
+
+  bool hasNameForIndex(std::size_t NameIndex) const {
+    return getNumberOfNames() > NameIndex;
   }
 
   std::size_t getNumberOfNames() const {
@@ -120,6 +128,22 @@ struct StmtInfo {
   StmtInfo(Stmt *Stmt = nullptr) : StmtInfo(Stmt, 0, 0) {
   }
 
+  SourceLocation getLocStart() const {
+    if (EndIndex != 0) {
+      auto CS = static_cast<CompoundStmt*>(S);
+      return CS->body_begin()[StartIndex]->getLocStart();
+    }
+    return S->getLocStart();
+  }
+
+  SourceLocation getLocEnd() const {
+    if (EndIndex != 0) {
+      auto CS = static_cast<CompoundStmt*>(S);
+      return CS->body_begin()[StartIndex]->getLocEnd();
+    }
+    return S->getLocEnd();
+  }
+
   bool operator==(const StmtInfo& other) const {
     return S == other.S &&
         StartIndex == other.StartIndex &&
@@ -166,9 +190,18 @@ public:
   struct CompareResult {
     StmtFeatureKind MismatchKind;
     FeatureVector::ComparisonResult result;
+    FeatureVector FeaturesThis;
+    FeatureVector FeaturesOther;
     CompareResult(StmtFeatureKind MismatchKind,
-                  FeatureVector::ComparisonResult result)
-      : MismatchKind(MismatchKind), result(result) {
+                  FeatureVector::ComparisonResult result,
+                  FeatureVector FeaturesThis,
+                  FeatureVector FeaturesOther)
+      : MismatchKind(MismatchKind), result(result), FeaturesThis(FeaturesThis),
+        FeaturesOther(FeaturesOther){
+    }
+
+    CompareResult()
+      : MismatchKind(StmtFeatureKind::END) {
     }
   };
 
@@ -177,10 +210,11 @@ public:
       FeatureVector::ComparisonResult vectorResult =
           Features[Kind].compare(other.Features[Kind]);
       if (!vectorResult.Incompatible && !vectorResult.Success) {
-        return CompareResult(static_cast<StmtFeatureKind>(Kind), vectorResult);
+        return CompareResult(static_cast<StmtFeatureKind>(Kind), vectorResult,
+                             Features[Kind], other.Features[Kind]);
       }
     }
-    return CompareResult(END, FeatureVector::ComparisonResult());
+    return CompareResult();
   }
 
 private:
@@ -287,14 +321,18 @@ public:
     CloneInfo Clones;
     Feature MismatchA;
     Feature MismatchB;
+    FeatureVector FeaturesA;
+    FeatureVector FeaturesB;
     StmtFeature::StmtFeatureKind MismatchKind;
   public:
     CloneMismatch() {
     }
 
     CloneMismatch(CloneInfo Clones, Feature MismatchA, Feature MismatchB,
+                  FeatureVector FeaturesA, FeatureVector FeaturesB,
                   StmtFeature::StmtFeatureKind MismatchKind)
       : Clones(Clones), MismatchA(MismatchA), MismatchB(MismatchB),
+        FeaturesA(FeaturesA), FeaturesB(FeaturesB),
         MismatchKind(MismatchKind) {
     }
   };
