@@ -35,28 +35,30 @@ public:
 };
 } // end anonymous namespace
 
+#include <iostream>
+
 void CopyPasteChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
                                                   AnalysisManager &Mgr,
                                                   BugReporter &BR) const {
   ASTStructure Structure(TU->getASTContext());
 
-  std::vector<StmtFeature::CompareResult> Clones = Structure.findCloneErrors();
+  std::vector<ASTStructure::CloneMismatch> Clones = Structure.findCloneErrors();
 
   DiagnosticsEngine& DiagEngine = Mgr.getDiagnostic();
 
-  for (StmtFeature::CompareResult Clone : Clones) {
+  for (ASTStructure::CloneMismatch Clone : Clones) {
       unsigned WarnID =
-          DiagEngine.getCustomDiagID(DiagnosticsEngine::Warning, "%0");
+          DiagEngine.getCustomDiagID(DiagnosticsEngine::Warning,
+                                     "Possibly faulty copy-pasted code");
       unsigned NoteID =
-          DiagEngine.getCustomDiagID(DiagnosticsEngine::Note, "%0");
+          DiagEngine.getCustomDiagID(DiagnosticsEngine::Note,
+                                    "Copy-paste source was here");
 
-      SourceLocation WarnLoc = Clone.result.FeatureThis.getLocation();
-      SourceLocation NoteLoc = Clone.result.FeatureOther.getLocation();
+      SourceLocation WarnLoc = Clone.MismatchA.getLocation();
+      SourceLocation NoteLoc = Clone.MismatchB.getLocation();
 
-      DiagEngine.Report(WarnLoc, WarnID) << "Possibly faulty copy-pasted code";
-
-      DiagEngine.Report(NoteLoc, NoteID) << "Copy-paste source was here";
-
+      DiagEngine.Report(WarnLoc, WarnID);
+      DiagEngine.Report(NoteLoc, NoteID);
   }
 }
 

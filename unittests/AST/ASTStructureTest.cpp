@@ -678,6 +678,46 @@ TEST(ASTStructure, ImageTest) {
     })test"));
 }
 
+TEST(StmtFeature, Test) {
+  auto ASTUnitA = tooling::buildASTFromCode(
+  R"test(
+  void foo() {
+    int x = 0;
+    int y = 0;
+    y++;
+    x++;
+  }
+  )test");
+
+  auto ASTUnitB = tooling::buildASTFromCode(
+  R"test(
+  void foo() {
+    int a = 0;
+    int b = 0;
+    a++;
+    a++;
+  }
+  )test");
+
+  FunctionFinder Finder("foo");
+  Finder.TraverseTranslationUnitDecl(
+        ASTUnitA->getASTContext().getTranslationUnitDecl());
+
+  StmtFeature FeatureA(Finder.getDecl()->getBody());
+
+  Finder.TraverseTranslationUnitDecl(
+        ASTUnitB->getASTContext().getTranslationUnitDecl());
+
+  StmtFeature FeatureB(Finder.getDecl()->getBody());
+
+  StmtFeature::CompareResult CompareResult = FeatureA.compare(FeatureB);
+
+  assert(CompareResult.MismatchKind == StmtFeature::StmtFeatureKind::NamedDecl);
+  assert(CompareResult.result.Success == false);
+  assert(CompareResult.result.Incompatible == false);
+  assert(CompareResult.result.FeatureThis.getNameIndex() == 1);
+  assert(CompareResult.result.FeatureOther.getNameIndex() == 0);
+}
 
 TEST(FeatureVector, Mismatch) {
   FeatureVector VectorA, VectorB;

@@ -21,16 +21,22 @@
 
 namespace clang {
 
+class FeatureVector;
 
 class Feature {
+  std::string Name;
   std::size_t NameIndex;
   SourceLocation Location;
 public:
   Feature() {
   }
 
-  Feature(std::size_t NameIndex, SourceLocation Loc)
-    : NameIndex(NameIndex), Location(Loc) {
+  Feature(const std::string& Name, std::size_t NameIndex, SourceLocation Loc)
+    : Name(Name), NameIndex(NameIndex), Location(Loc) {
+  }
+
+  const std::string& getName() const {
+    return Name;
   }
 
   std::size_t getNameIndex() const {
@@ -48,19 +54,15 @@ class FeatureVector {
   std::vector<std::string> FeatureNames;
 public:
 
-  void add(const std::string& FeatureName, SourceLocation Location) {
-    for (std::size_t I = 0; I < FeatureNames.size(); ++I) {
-      if (FeatureNames[I] == FeatureName) {
-          Locations.push_back({I, Location});
-          return;
-      }
-    }
-    Locations.push_back({Locations.size(), Location});
-    FeatureNames.push_back(FeatureName);
+  void add(const std::string& FeatureName, SourceLocation Location);
+
+  const std::string& getName(std::size_t NameIndex) const {
+    assert(getNumberOfNames() > NameIndex);
+    return FeatureNames[NameIndex];
   }
 
-  const std::string& getName(std::size_t NameIndex) {
-    return FeatureNames[NameIndex];
+  std::size_t getNumberOfNames() const {
+    return FeatureNames.size();
   }
 
   struct ComparisonResult {
@@ -68,6 +70,10 @@ public:
     Feature FeatureOther;
     bool Success;
     bool Incompatible;
+  public:
+    ComparisonResult() : Success(true), Incompatible(false) {
+    }
+
   };
 
   ComparisonResult compare(const FeatureVector& other) {
@@ -94,40 +100,86 @@ public:
 
 };
 
+
+struct StmtInfo {
+  Stmt *S;
+  unsigned StartIndex;
+  unsigned EndIndex;
+
+  StmtInfo(Stmt *Stmt, unsigned StartIndex, unsigned EndIndex)
+    : S(Stmt), StartIndex(StartIndex), EndIndex(EndIndex) {
+  }
+  StmtInfo(Stmt *Stmt = nullptr) : StmtInfo(Stmt, 0, 0) {
+  }
+
+  bool operator==(const StmtInfo& other) const {
+    return S == other.S &&
+        StartIndex == other.StartIndex &&
+        EndIndex == other.EndIndex;
+  }
+
+  bool contains(StmtInfo other) const;
+
+  bool equal(const StmtInfo& other);
+};
+
+}
+
+namespace std {
+  template <>
+  struct hash<clang::StmtInfo>
+  {
+    size_t operator()(const clang::StmtInfo &Info) const
+    {
+      return ((std::hash<clang::Stmt *>()(Info.S)
+               ^ (std::hash<unsigned>()(Info.StartIndex) << 1)) >> 1)
+               ^ (std::hash<unsigned>()(Info.EndIndex) << 1);
+    }
+  };
+}
+
+namespace clang {
+
 class StmtFeature {
 
 public:
   // TODO More than just named decl support
   enum StmtFeatureKind {
     NamedDecl = 0,
+    FunctionName = 1,
     END
   };
 
-  StmtFeature(Stmt *S);
+  StmtFeature(StmtInfo S);
 
   void add(const std::string& Name, SourceLocation Loc, StmtFeatureKind Kind);
 
   struct CompareResult {
     StmtFeatureKind MismatchKind;
     FeatureVector::ComparisonResult result;
+    CompareResult(StmtFeatureKind MismatchKind,
+                  FeatureVector::ComparisonResult result)
+      : MismatchKind(MismatchKind), result(result) {
+    }
   };
 
   CompareResult compare(const StmtFeature& other) {
     for (unsigned Kind = 0; Kind < END; ++Kind) {
       FeatureVector::ComparisonResult vectorResult =
           Features[Kind].compare(other.Features[Kind]);
-      if (!vectorResult.Success) {
-        return {static_cast<StmtFeatureKind>(Kind), vectorResult};
+      assert(!vectorResult.Incompatible);
+      if (!vectorResult.Incompatible && !vectorResult.Success) {
+        assert(vectorResult.FeatureThis.getLocation().isValid());
+        return CompareResult(static_cast<StmtFeatureKind>(Kind), vectorResult);
       }
     }
-    return {END, FeatureVector::ComparisonResult()};
+    return CompareResult(END, FeatureVector::ComparisonResult());
   }
 
 private:
-
   FeatureVector Features[END];
-
 };
+
 
 /// ASTStructure - This class analyses the structure of the Stmts
 /// in a given AST and is intended to be used to find sub-trees with identical
@@ -135,12 +187,12 @@ private:
 /// code behind it.
 ///
 /// Specifically this class provides a locality-sensitive hash function
-/// for Stmts that generates colliding hash values
-/// for nodes with the same structure.
+/// for Stmts that generates colliding hash values for nodes with the same
+/// structure.
 ///
-/// This is done by only hashing
-/// information that describes structure (e.g. the type of each
-/// node).
+/// This is done by only hashing information that describes structure
+/// (e.g. the type of each node).
+///
 /// Other information such as the names of variables, classes
 /// and other parts of the program are ignored.
 class ASTStructure {
@@ -158,8 +210,6 @@ public:
     }
   };
 
-
-  ///
   /// \brief ASTStructure generates information about the Stmts in the AST.
   ///
   /// \param Context The AST that shall be analyzed.
@@ -173,26 +223,25 @@ public:
     bool Success;
   };
 
-  ///
   /// \brief Looks up the structure hash code for the given Stmt
   ///        in the storage of this ASTStructure object.
   ///
   /// \param S the given Stmt.
   ///
-  /// \returns A \c HashSearchResult containing information of whether
-  ///          the search was successful and if yes the found hash code.
+  /// \returns A \c HashSearchResult containing information of whether the
+  ///          search was successful and if yes the found hash code.
   ///
   /// The structure hash code is a integer describing the structure
   /// of the given Stmt. Stmts with an equal structure hash code probably
   /// have the same structure.
-  HashSearchResult findHash(Stmt *S) {
+  HashSearchResult findHash(StmtInfo S) {
     auto I = HashedStmts.find(S);
     if (I == HashedStmts.end()) {
       return {StmtData(), false};
     }
     return {I->second, true};
   }
-  ///
+
   /// \brief Adds with the given Stmt with the associated structure hash code
   ///        to the storage of this ASTStructure object.
   ///
@@ -203,10 +252,50 @@ public:
     HashedStmts.insert(std::make_pair(S, StmtData(Hash, Children)));
   }
 
-  std::vector<StmtFeature::CompareResult> findCloneErrors();
+  /// \brief Adds with the given Stmt with the associated structure hash code
+  ///        to the storage of this ASTStructure object.
+  ///
+  /// \param Hash the hash code of the given Stmt.
+  /// \param Children the children of this.
+  /// \param S the given Stmt.
+  /// \param StartIndex the inclusive start index if the Stmt is a CompoundStmt.
+  /// \param EndIndex the exclusive end index if the Stmt is a CompoundStmt.
+  void add(unsigned Hash, unsigned Children, Stmt *S,
+           unsigned StartIndex, unsigned EndIndex) {
+    HashedStmts.insert(std::make_pair(StmtInfo(S, StartIndex, EndIndex),
+                                      StmtData(Hash, Children)));
+  }
+
+  struct CloneInfo {
+    StmtInfo CloneA;
+    StmtInfo CloneB;
+    CloneInfo(StmtInfo CloneA, StmtInfo CloneB)
+      : CloneA(CloneA), CloneB(CloneB) {
+    }
+    CloneInfo(){
+    }
+  };
+
+  struct CloneMismatch {
+    CloneInfo Clones;
+    Feature MismatchA;
+    Feature MismatchB;
+    StmtFeature::StmtFeatureKind MismatchKind;
+  public:
+    CloneMismatch() {
+    }
+
+    CloneMismatch(CloneInfo Clones, Feature MismatchA, Feature MismatchB,
+                  StmtFeature::StmtFeatureKind MismatchKind)
+      : Clones(Clones), MismatchA(MismatchA), MismatchB(MismatchB),
+        MismatchKind(MismatchKind) {
+    }
+  };
+
+  std::vector<CloneMismatch> findCloneErrors();
 
 private:
-  std::unordered_map<Stmt *, StmtData> HashedStmts;
+  std::unordered_map<StmtInfo, StmtData> HashedStmts;
 
 };
 

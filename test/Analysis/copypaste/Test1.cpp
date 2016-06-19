@@ -1,26 +1,29 @@
 // RUN: %clang_cc1 -analyze -std=c++11 -analyzer-checker=clone.CopyPasteChecker -verify %s
 
-int a = 0;
+struct Image {
+  int width() { return 0; }
+  int height() { return 0; }
+  void setWidth(int x) {}
+  void setHeight(int y) {}
+};
+void assert(bool) {}
 
-void foo() {
-  int b = 0;
-  if (a > 0) {
-    a++;
-    a++;
-    b++;
-    a++;
-    b--;
-  }
+void testWidthRanges() {
+  Image img;
+  img.setWidth(0);
+  assert(img.width() == 0);
+  img.setWidth(1);
+  assert(img.width() == 1);
+  img.setWidth(-1);
+  assert(false);
 }
 
-void boo() {
-  int c = 0;
-  if (a > 0) {
-    a++;
-    a++;
-    a++;
-    a++;
-    c--;
-  }
+void testHeightRanges() {
+  Image img;
+  img.setHeight(0);
+  assert(img.height() == 0);
+  img.setHeight(1);
+  assert(img.height() == 1);
+  img.setWidth(-1);
+  assert(false);
 }
-

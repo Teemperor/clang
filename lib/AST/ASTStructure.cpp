@@ -39,7 +39,7 @@ public:
 
   bool VisitStmt(Stmt *S) {
     // At this point we know that all Visit* calls for the previous Stmt have
-    // finished, so we know save the calculated hash before starting
+    // finished, so we now save the calculated hash before starting
     // to calculate the next hash.
     SaveCurrentHash();
 
@@ -47,13 +47,15 @@ public:
     // Stmt, so we save what Stmt we are currently processing
     // for SaveCurrentHash.
     CurrentStmt = S;
-    // Reset the initial hash code for this Stmt.
+
+    // Reset options for the current hash code.
+    IgnoreClassHash = false;
     Hash = 0;
     Children = 1;
-    ClassHash = S->getStmtClass();
-    // Reset options for the current hash code.
     SkipHash = false;
-    IgnoreClassHash = false;
+
+    // Reset the initial hash code for this Stmt.
+    ClassHash = S->getStmtClass();
 
     if (shouldSkipStmt(S))
       return Skip();
@@ -133,14 +135,37 @@ private:
   // Saves the current hash code into the persistent storage of this
   // ASTStructure.
   void SaveCurrentHash() {
-    if (SkipHash) {
+    if (SkipHash)
       return;
-    }
+
     if (!IgnoreClassHash) {
       Hash += ClassHash;
     }
+
+    if (auto CS = dyn_cast<CompoundStmt>(CurrentStmt)) {
+      if (!CS->body_empty()) {
+        for (unsigned Length = 1; Length < CS->size() - 1; ++Length) {
+          for (unsigned Pos = 0; Pos < CS->size() - Length; ++Pos) {
+            unsigned SubHash = 0;
+            unsigned Children = 0;
+
+            for (unsigned I = Pos; I < Pos + Length; ++I) {
+                Stmt *Child = CS->body_begin()[I];
+                ASTStructure::HashSearchResult Result = SH.findHash(Child);
+                if (Result.Success) {
+                  SubHash += I * 27 * Result.Data.Hash;
+                  Children += Result.Data.Children;
+                } else {
+                  ++Children;
+                }
+            }
+
+            SH.add(SubHash, Children, CurrentStmt, Pos, Pos + Length);
+          }
+        }
+      }
+    }
     SH.add(Hash, Children, CurrentStmt);
-    CurrentStmt = nullptr;
   }
 
   ASTStructure &SH;
@@ -154,13 +179,13 @@ private:
   // Stmt. They are resetted after the Stmt is successfully hased.
 
   // If the current hash should not be saved for later use.
-  bool SkipHash = false;
+  bool SkipHash = true;
 
   // The hash value that is calculated right now.
   unsigned Hash;
 
   // The number of children of the current stmt
-  unsigned Children;
+  unsigned Children = 0;
 
   // If true, the current Hash only depends on custom data of the
   // current Stmt and the child values.
@@ -171,11 +196,11 @@ private:
   // A hash value that is unique to the current Stmt class.
   // By default, this value is merged with the \c Hash variable
   // for the resulting
-  unsigned ClassHash;
+  unsigned ClassHash = 0;
 };
 
 #define DEF_STMT_VISIT(CLASS, CODE)                                            \
-  bool StructuralHashVisitor::Visit##CLASS(CLASS *S) {                     \
+  bool StructuralHashVisitor::Visit##CLASS(CLASS *S) {                         \
     if (SkipHash)                                                              \
       return true;                                                             \
     { CODE; }                                                                  \
@@ -480,7 +505,7 @@ class FeatureCollectVisitor
     : public RecursiveASTVisitor<FeatureCollectVisitor> {
 
 public:
- StmtFeature& Feature;
+  StmtFeature& Feature;
 
   FeatureCollectVisitor(StmtFeature &Feature) : Feature(Feature) {
 
@@ -491,14 +516,36 @@ public:
                 StmtFeature::StmtFeatureKind::NamedDecl);
     return true;
   }
+
+  bool VisitDeclRefExpr(DeclRefExpr *D) {
+    if (auto ND = dyn_cast<NamedDecl>(D->getDecl())) {
+      Feature.add(ND->getQualifiedNameAsString(), D->getLocStart(),
+                  StmtFeature::StmtFeatureKind::NamedDecl);
+    }
+    return true;
+  }
+
+  bool VisitCXXMemberCallExpr(CXXMemberCallExpr *E) {
+    Feature.add(E->getMethodDecl()->getQualifiedNameAsString(),
+                E->getLocStart(), StmtFeature::StmtFeatureKind::FunctionName);
+    return true;
+  }
 };
 }
 
-StmtFeature::StmtFeature(Stmt *S) {
+StmtFeature::StmtFeature(StmtInfo Info) {
+  FeatureCollectVisitor Visitor(*this);
+  if (Info.EndIndex == 0) {
+    Visitor.TraverseStmt(Info.S);
+  } else {
+    for (unsigned I = Info.StartIndex; I < Info.EndIndex; ++I) {
+      Visitor.TraverseStmt(static_cast<CompoundStmt*>(Info.S)->body_begin()[I]);
+    }
+  }
 }
 
 void StmtFeature::add(const std::string &Name, SourceLocation Loc, StmtFeatureKind Kind) {
-
+  Features[Kind].add(Name, Loc);
 }
 
 namespace {
@@ -517,6 +564,7 @@ public:
 };
 
 bool CheckStmtEquality(Stmt *S1, Stmt *S2) {
+
   CompareDataVisitor Visitor1;
   CompareDataVisitor Visitor2;
 
@@ -526,21 +574,32 @@ bool CheckStmtEquality(Stmt *S1, Stmt *S2) {
   return Visitor1.Data == Visitor2.Data;
 }
 
-void SearchForCloneErrors(std::vector<StmtFeature::CompareResult>& output,
-                          std::vector<Stmt *>& Group) {
+void SearchForCloneErrors(std::vector<ASTStructure::CloneMismatch>& output,
+                          std::vector<StmtInfo>& Group) {
   for (std::size_t I1 = 0; I1 < Group.size(); ++I1) {
-      for (std::size_t I2 = I1 + 1; I2 < Group.size(); ++I2) {
-      Stmt *CurrentStmt = Group[I1];
-      Stmt *OtherStmt = Group[I2];
+    for (std::size_t I2 = I1 + 1; I2 < Group.size(); ++I2) {
+      StmtInfo CurrentStmt = Group[I1];
+      StmtInfo OtherStmt = Group[I2];
 
-      if (CheckStmtEquality(CurrentStmt, OtherStmt)) {
+      if (CurrentStmt.equal(OtherStmt)) {
         StmtFeature CurrentFeature(CurrentStmt);
         StmtFeature OtherFeature(OtherStmt);
+
         StmtFeature::CompareResult CompareResult =
             CurrentFeature.compare(OtherFeature);
-        assert(!CompareResult.result.Incompatible);
-        if (!CompareResult.result.Success) {
-          output.push_back(CompareResult);
+
+        if (!CompareResult.result.Incompatible &&
+            !CompareResult.result.Success) {
+
+          assert(CompareResult.result.FeatureThis.getLocation().isValid());
+          output.push_back(
+            ASTStructure::CloneMismatch(
+              ASTStructure::CloneInfo(CurrentStmt, OtherStmt),
+              CompareResult.result.FeatureThis,
+              CompareResult.result.FeatureOther,
+              CompareResult.MismatchKind
+            )
+          );
         }
       }
     }
@@ -548,10 +607,10 @@ void SearchForCloneErrors(std::vector<StmtFeature::CompareResult>& output,
 }
 }
 
-std::vector<StmtFeature::CompareResult> ASTStructure::findCloneErrors() {
-  std::vector<StmtFeature::CompareResult> result;
+std::vector<ASTStructure::CloneMismatch> ASTStructure::findCloneErrors() {
+  std::vector<ASTStructure::CloneMismatch> result;
 
-  std::map<unsigned, std::vector<Stmt *> > GroupsByHash;
+  std::map<unsigned, std::vector<StmtInfo> > GroupsByHash;
 
   for (auto& Pair : HashedStmts) {
     if (Pair.second.Children > 5) {
@@ -565,5 +624,85 @@ std::vector<StmtFeature::CompareResult> ASTStructure::findCloneErrors() {
     }
   }
 
+  std::set<unsigned> IndexesToRemove;
+
+  for (unsigned I = 0; I < result.size(); ++I) {
+    auto Mismatch = result[I];
+
+    for (unsigned J = 0; J < result.size(); ++J) {
+      auto OtherMismatch = result[J];
+      if (I != J) {
+        if (OtherMismatch.Clones.CloneA.contains(Mismatch.Clones.CloneA) &&
+            OtherMismatch.Clones.CloneB.contains(Mismatch.Clones.CloneB)) {
+          IndexesToRemove.insert(I);
+          break;
+        }
+      }
+    }
+  }
+
+  for (auto Iter = IndexesToRemove.rbegin();
+       Iter != IndexesToRemove.rend();
+       ++Iter) {
+    result.erase(result.begin() + (*Iter));
+  }
+
   return result;
+}
+
+namespace {
+  bool IsChild(Stmt *S, Stmt *PotentialChild) {
+    for (Stmt *Child : S->children()) {
+      if (Child == PotentialChild) {
+        return true;
+      } else if (Child != nullptr) {
+        if (IsChild(Child, PotentialChild)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+}
+
+bool StmtInfo::contains(StmtInfo other) const {
+  if (S == other.S) {
+    if (EndIndex == 0) {
+      return true;
+    }
+    if (StartIndex <= other.StartIndex && EndIndex >= other.EndIndex) {
+      return true;
+    }
+    return false;
+  } else {
+    return IsChild(S, other.S);
+  }
+}
+
+bool StmtInfo::equal(const StmtInfo &other) {
+  if (EndIndex != other.EndIndex || StartIndex != other.StartIndex)
+    return false;
+  if (EndIndex == 0) {
+    return CheckStmtEquality(S, other.S);
+  } else {
+    CompoundStmt *CS = dyn_cast<CompoundStmt>(S);
+    CompoundStmt *CSOther = dyn_cast<CompoundStmt>(other.S);
+    for (unsigned Index = StartIndex; Index < EndIndex; ++Index) {
+      if (!CheckStmtEquality(CS->body_begin()[Index],
+                             CSOther->body_begin()[Index]))
+        return false;
+    }
+  }
+  return true;
+}
+
+void FeatureVector::add(const std::string &FeatureName, SourceLocation Location) {
+  for (std::size_t I = 0; I < FeatureNames.size(); ++I) {
+    if (FeatureNames[I] == FeatureName) {
+      Locations.push_back(Feature(FeatureName, I, Location));
+      return;
+    }
+  }
+  Locations.push_back(Feature(FeatureName, FeatureNames.size(), Location));
+  FeatureNames.push_back(FeatureName);
 }
