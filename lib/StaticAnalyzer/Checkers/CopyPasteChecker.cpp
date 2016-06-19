@@ -54,11 +54,15 @@ void CopyPasteChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
           DiagEngine.getCustomDiagID(DiagnosticsEngine::Note,
                                     "Copy-paste source was here");
 
-      SourceLocation WarnLoc = Clone.MismatchA.getLocation();
-      SourceLocation NoteLoc = Clone.MismatchB.getLocation();
+      SourceLocation WarnLoc = Clone.MismatchA.getStartLocation();
+      SourceLocation NoteLoc = Clone.MismatchB.getStartLocation();
 
-      DiagEngine.Report(WarnLoc, WarnID);
-      DiagEngine.Report(NoteLoc, NoteID);
+      DiagEngine.Report(WarnLoc, WarnID) <<
+            SourceRange(Clone.MismatchA.getStartLocation(),
+                        Clone.MismatchA.getEndLocation());
+      DiagEngine.Report(NoteLoc, NoteID) <<
+            SourceRange(Clone.MismatchB.getStartLocation(),
+                        Clone.MismatchB.getEndLocation());
   }
 }
 

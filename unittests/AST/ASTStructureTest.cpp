@@ -722,13 +722,13 @@ TEST(StmtFeature, Test) {
 TEST(FeatureVector, Mismatch) {
   FeatureVector VectorA, VectorB;
 
-  VectorA.add("x", SourceLocation());
-  VectorA.add("y", SourceLocation());
-  VectorA.add("z", SourceLocation());
+  VectorA.add("x", SourceLocation(), SourceLocation());
+  VectorA.add("y", SourceLocation(), SourceLocation());
+  VectorA.add("z", SourceLocation(), SourceLocation());
 
-  VectorB.add("a", SourceLocation());
-  VectorB.add("b", SourceLocation());
-  VectorB.add("b", SourceLocation()); // need to detect this pattern error
+  VectorB.add("a", SourceLocation(), SourceLocation());
+  VectorB.add("b", SourceLocation(), SourceLocation());
+  VectorB.add("b", SourceLocation(), SourceLocation()); // need to detect this pattern error
 
   ASSERT_FALSE(VectorA.compare(VectorB).Success);
   ASSERT_FALSE(VectorA.compare(VectorB).Incompatible);
@@ -740,13 +740,13 @@ TEST(FeatureVector, Mismatch) {
 TEST(FeatureVector, Match) {
   FeatureVector VectorA, VectorB;
 
-  VectorA.add("x", SourceLocation());
-  VectorA.add("y", SourceLocation());
-  VectorA.add("z", SourceLocation());
+  VectorA.add("x", SourceLocation(), SourceLocation());
+  VectorA.add("y", SourceLocation(), SourceLocation());
+  VectorA.add("z", SourceLocation(), SourceLocation());
 
-  VectorB.add("a", SourceLocation());
-  VectorB.add("b", SourceLocation());
-  VectorB.add("c", SourceLocation());
+  VectorB.add("a", SourceLocation(), SourceLocation());
+  VectorB.add("b", SourceLocation(), SourceLocation());
+  VectorB.add("c", SourceLocation(), SourceLocation());
 
   ASSERT_TRUE(VectorA.compare(VectorB).Success);
   ASSERT_FALSE(VectorA.compare(VectorB).Incompatible);
@@ -756,12 +756,12 @@ TEST(FeatureVector, Match) {
 TEST(FeatureVector, Incompatible) {
   FeatureVector VectorA, VectorB;
 
-  VectorA.add("x", SourceLocation());
-  VectorA.add("y", SourceLocation());
-  VectorA.add("z", SourceLocation());
+  VectorA.add("x", SourceLocation(), SourceLocation());
+  VectorA.add("y", SourceLocation(), SourceLocation());
+  VectorA.add("z", SourceLocation(), SourceLocation());
 
-  VectorB.add("a", SourceLocation());
-  VectorB.add("b", SourceLocation());
+  VectorB.add("a", SourceLocation(), SourceLocation());
+  VectorB.add("b", SourceLocation(), SourceLocation());
 
   ASSERT_FALSE(VectorA.compare(VectorB).Success);
   ASSERT_TRUE(VectorA.compare(VectorB).Incompatible);

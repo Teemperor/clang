@@ -512,7 +512,7 @@ public:
   }
 
   bool VisitNamedDecl(NamedDecl *D) {
-    Feature.add(D->getQualifiedNameAsString(), D->getLocStart(),
+    Feature.add(D->getQualifiedNameAsString(), D->getLocStart(), D->getLocEnd(),
                 StmtFeature::StmtFeatureKind::NamedDecl);
     return true;
   }
@@ -520,14 +520,15 @@ public:
   bool VisitDeclRefExpr(DeclRefExpr *D) {
     if (auto ND = dyn_cast<NamedDecl>(D->getDecl())) {
       Feature.add(ND->getQualifiedNameAsString(), D->getLocStart(),
-                  StmtFeature::StmtFeatureKind::NamedDecl);
+                  D->getLocEnd(), StmtFeature::StmtFeatureKind::NamedDecl);
     }
     return true;
   }
 
   bool VisitCXXMemberCallExpr(CXXMemberCallExpr *E) {
     Feature.add(E->getMethodDecl()->getQualifiedNameAsString(),
-                E->getLocStart(), StmtFeature::StmtFeatureKind::FunctionName);
+                E->getLocStart(), E->getLocEnd(),
+                StmtFeature::StmtFeatureKind::FunctionName);
     return true;
   }
 };
@@ -544,8 +545,9 @@ StmtFeature::StmtFeature(StmtInfo Info) {
   }
 }
 
-void StmtFeature::add(const std::string &Name, SourceLocation Loc, StmtFeatureKind Kind) {
-  Features[Kind].add(Name, Loc);
+void StmtFeature::add(const std::string &Name, SourceLocation StartLoc,
+                      SourceLocation EndLoc, StmtFeatureKind Kind) {
+  Features[Kind].add(Name, StartLoc, EndLoc);
 }
 
 namespace {
@@ -591,7 +593,6 @@ void SearchForCloneErrors(std::vector<ASTStructure::CloneMismatch>& output,
         if (!CompareResult.result.Incompatible &&
             !CompareResult.result.Success) {
 
-          assert(CompareResult.result.FeatureThis.getLocation().isValid());
           output.push_back(
             ASTStructure::CloneMismatch(
               ASTStructure::CloneInfo(CurrentStmt, OtherStmt),
@@ -696,13 +697,15 @@ bool StmtInfo::equal(const StmtInfo &other) {
   return true;
 }
 
-void FeatureVector::add(const std::string &FeatureName, SourceLocation Location) {
+void FeatureVector::add(const std::string &FeatureName,
+                        SourceLocation StartLocation, SourceLocation EndLocation) {
   for (std::size_t I = 0; I < FeatureNames.size(); ++I) {
     if (FeatureNames[I] == FeatureName) {
-      Locations.push_back(Feature(FeatureName, I, Location));
+      Locations.push_back(Feature(FeatureName, I, StartLocation, EndLocation));
       return;
     }
   }
-  Locations.push_back(Feature(FeatureName, FeatureNames.size(), Location));
+  Locations.push_back(Feature(FeatureName, FeatureNames.size(),
+                              StartLocation, EndLocation));
   FeatureNames.push_back(FeatureName);
 }

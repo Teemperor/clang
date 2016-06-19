@@ -26,13 +26,16 @@ class FeatureVector;
 class Feature {
   std::string Name;
   std::size_t NameIndex;
-  SourceLocation Location;
+  SourceLocation StartLocation;
+  SourceLocation EndLocation;
 public:
   Feature() {
   }
 
-  Feature(const std::string& Name, std::size_t NameIndex, SourceLocation Loc)
-    : Name(Name), NameIndex(NameIndex), Location(Loc) {
+  Feature(const std::string& Name, std::size_t NameIndex,
+          SourceLocation StartLoc, SourceLocation EndLoc)
+    : Name(Name), NameIndex(NameIndex),
+      StartLocation(StartLoc), EndLocation(EndLoc) {
   }
 
   const std::string& getName() const {
@@ -43,8 +46,12 @@ public:
     return NameIndex;
   }
 
-  SourceLocation getLocation() const {
-    return Location;
+  SourceLocation getStartLocation() const {
+    return StartLocation;
+  }
+
+  SourceLocation getEndLocation() const {
+    return EndLocation;
   }
 };
 
@@ -54,7 +61,8 @@ class FeatureVector {
   std::vector<std::string> FeatureNames;
 public:
 
-  void add(const std::string& FeatureName, SourceLocation Location);
+  void add(const std::string& FeatureName, SourceLocation StartLocation,
+           SourceLocation EndLocation);
 
   const std::string& getName(std::size_t NameIndex) const {
     assert(getNumberOfNames() > NameIndex);
@@ -152,7 +160,8 @@ public:
 
   StmtFeature(StmtInfo S);
 
-  void add(const std::string& Name, SourceLocation Loc, StmtFeatureKind Kind);
+  void add(const std::string& Name, SourceLocation StartLoc,
+           SourceLocation EndLoc, StmtFeatureKind Kind);
 
   struct CompareResult {
     StmtFeatureKind MismatchKind;
@@ -167,9 +176,7 @@ public:
     for (unsigned Kind = 0; Kind < END; ++Kind) {
       FeatureVector::ComparisonResult vectorResult =
           Features[Kind].compare(other.Features[Kind]);
-      assert(!vectorResult.Incompatible);
       if (!vectorResult.Incompatible && !vectorResult.Success) {
-        assert(vectorResult.FeatureThis.getLocation().isValid());
         return CompareResult(static_cast<StmtFeatureKind>(Kind), vectorResult);
       }
     }
