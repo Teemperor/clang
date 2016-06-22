@@ -50,19 +50,17 @@ public:
     // for SaveCurrentHash.
     CurrentStmt = S;
 
-    // Reset options for the current hash code.
+    // Reset options and hash values for the current Stmt.
     IgnoreClassHash = false;
     Hash = 0;
     Complexity = 1;
     SkipHash = false;
-
-    // Reset the initial hash code for this Stmt.
     ClassHash = S->getStmtClass();
 
     if (shouldSkipStmt(S))
       return Skip();
 
-    // Incorporate the hash values of all child Stmts into the current.
+    // Incorporate the hash values of all child Stmts into the current
     // Hash value.
     for (Stmt *Child : S->children()) {
       if (Child == nullptr) {
