@@ -24,6 +24,8 @@ namespace {
 class StructuralHashVisitor
     : public RecursiveASTVisitor<StructuralHashVisitor> {
 
+  static const unsigned CompoundStmtChildComplexity = 8;
+
 public:
   explicit StructuralHashVisitor(ASTStructure &Hash, ASTContext &Context)
       : SH(Hash), Context(Context) {}
@@ -51,7 +53,7 @@ public:
     // Reset options for the current hash code.
     IgnoreClassHash = false;
     Hash = 0;
-    Children = 1;
+    Complexity = 1;
     SkipHash = false;
 
     // Reset the initial hash code for this Stmt.
@@ -66,14 +68,14 @@ public:
       if (Child == nullptr) {
         // We use an placeholder value for missing children.
         CalcHash(313);
-        ++Children;
+        ++Complexity;
       } else {
         CalcHash(Child);
         ASTStructure::HashSearchResult Result = SH.findHash(Child);
         if (Result.Success) {
-          Children += Result.Data.Children;
+          Complexity += Result.Data.Complexity;
         } else {
-          ++Children;
+          ++Complexity;
         }
       }
     }
@@ -147,25 +149,26 @@ private:
         for (unsigned Length = 1; Length < CS->size() - 1; ++Length) {
           for (unsigned Pos = 0; Pos < CS->size() - Length; ++Pos) {
             unsigned SubHash = 0;
-            unsigned Children = 0;
+            unsigned Complexity = 0;
 
             for (unsigned I = Pos; I < Pos + Length; ++I) {
                 Stmt *Child = CS->body_begin()[I];
                 ASTStructure::HashSearchResult Result = SH.findHash(Child);
                 if (Result.Success) {
                   SubHash += I * 27 * Result.Data.Hash;
-                  Children += Result.Data.Children;
+                  Complexity += Result.Data.Complexity;
                 } else {
-                  ++Children;
+                  ++Complexity;
                 }
             }
+            Complexity += CompoundStmtChildComplexity * Length;
 
-            SH.add(SubHash, Children, CurrentStmt, Pos, Pos + Length);
+            SH.add(SubHash, Complexity, CurrentStmt, Pos, Pos + Length);
           }
         }
       }
     }
-    SH.add(Hash, Children, CurrentStmt);
+    SH.add(Hash, Complexity, CurrentStmt);
   }
 
   ASTStructure &SH;
@@ -185,7 +188,7 @@ private:
   unsigned Hash;
 
   // The number of children of the current stmt
-  unsigned Children = 0;
+  unsigned Complexity = 0;
 
   // If true, the current Hash only depends on custom data of the
   // current Stmt and the child values.
@@ -337,7 +340,9 @@ DEF_STMT_VISIT(LabelStmt, { CalcHash(S->getDecl()->getName()); })
 DEF_STMT_VISIT(MSDependentExistsStmt, { CalcHash(S->isIfExists()); })
 DEF_STMT_VISIT(AddrLabelExpr, { CalcHash(S->getLabel()->getName()); })
 DEF_STMT_VISIT(BreakStmt, {})
-DEF_STMT_VISIT(CompoundStmt, {})
+DEF_STMT_VISIT(CompoundStmt, {
+                 Complexity += CompoundStmtChildComplexity * S->size();
+               })
 DEF_STMT_VISIT(ContinueStmt, {})
 DEF_STMT_VISIT(DoStmt, {})
 
@@ -508,20 +513,24 @@ public:
   StmtFeature& Feature;
 
   FeatureCollectVisitor(StmtFeature &Feature) : Feature(Feature) {
-
   }
 
   bool VisitNamedDecl(NamedDecl *D) {
     Feature.add(D->getQualifiedNameAsString(), D->getLocStart(), D->getLocEnd(),
-                StmtFeature::StmtFeatureKind::NamedDecl);
+                StmtFeature::StmtFeatureKind::VariableName);
     return true;
   }
 
   bool VisitDeclRefExpr(DeclRefExpr *D) {
     if (auto ND = dyn_cast<NamedDecl>(D->getDecl())) {
       Feature.add(ND->getQualifiedNameAsString(), D->getLocStart(),
-                  D->getLocEnd(), StmtFeature::StmtFeatureKind::NamedDecl);
+                  D->getLocEnd(), StmtFeature::StmtFeatureKind::VariableName);
     }
+    return true;
+  }
+
+  bool VisitExpr(Expr *E) {
+    Feature.AddType(E->getType());
     return true;
   }
 
@@ -548,6 +557,21 @@ StmtFeature::StmtFeature(StmtInfo Info) {
 void StmtFeature::add(const std::string &Name, SourceLocation StartLoc,
                       SourceLocation EndLoc, StmtFeatureKind Kind) {
   Features[Kind].add(Name, StartLoc, EndLoc);
+}
+
+unsigned StmtFeature::differentFeatureVectors(const StmtFeature &other) {
+  unsigned Result = 0;
+  for (unsigned Kind = 0; Kind < END; ++Kind) {
+    auto CompareResult = Features[Kind].compare(other.Features[Kind]);
+    if (!CompareResult.Success && !CompareResult.Incompatible) {
+      ++Result;
+    }
+  }
+  return Result;
+}
+
+bool StmtFeature::TypeCompatible(const StmtFeature &Other) {
+  return Types == Other.Types;
 }
 
 namespace {
@@ -587,22 +611,25 @@ void SearchForCloneErrors(std::vector<ASTStructure::CloneMismatch>& output,
         StmtFeature CurrentFeature(CurrentStmt);
         StmtFeature OtherFeature(OtherStmt);
 
-        StmtFeature::CompareResult CompareResult =
-            CurrentFeature.compare(OtherFeature);
+        if (CurrentFeature.differentFeatureVectors(OtherFeature) == 1
+            && CurrentFeature.TypeCompatible(OtherFeature)) {
+          StmtFeature::CompareResult CompareResult =
+              CurrentFeature.compare(OtherFeature);
 
-        if (!CompareResult.result.Incompatible &&
-            !CompareResult.result.Success) {
+          if (!CompareResult.result.Incompatible &&
+              !CompareResult.result.Success) {
 
-          output.push_back(
-            ASTStructure::CloneMismatch(
-              ASTStructure::CloneInfo(CurrentStmt, OtherStmt),
-              CompareResult.result.FeatureThis,
-              CompareResult.result.FeatureOther,
-              CompareResult.FeaturesThis,
-              CompareResult.FeaturesOther,
-              CompareResult.MismatchKind
-            )
-          );
+            output.push_back(
+              ASTStructure::CloneMismatch(
+                ASTStructure::CloneInfo(CurrentStmt, OtherStmt),
+                CompareResult.result.FeatureThis,
+                CompareResult.result.FeatureOther,
+                CompareResult.FeaturesThis,
+                CompareResult.FeaturesOther,
+                CompareResult.MismatchKind
+              )
+            );
+          }
         }
       }
     }
@@ -610,49 +637,52 @@ void SearchForCloneErrors(std::vector<ASTStructure::CloneMismatch>& output,
 }
 }
 
-std::vector<ASTStructure::CloneMismatch> ASTStructure::findCloneErrors() {
+std::vector<ASTStructure::CloneMismatch> ASTStructure::findCloneErrors(
+    unsigned MinGroupComplexity) {
   std::vector<ASTStructure::CloneMismatch> result;
 
   std::map<unsigned, std::vector<StmtInfo> > GroupsByHash;
 
   for (auto& Pair : HashedStmts) {
-    if (Pair.second.Children > 5) {
+    if (Pair.second.Complexity > MinGroupComplexity) {
       GroupsByHash[Pair.second.Hash].push_back(Pair.first);
     }
   }
 
+  std::cerr << "Finding errors in groups..." << std::endl;
+  unsigned Index = 0;
   for (auto& HashGroupPair : GroupsByHash) {
     if (HashGroupPair.second.size() > 1) {
       SearchForCloneErrors(result, HashGroupPair.second);
     }
+    if (Index % 1000 == 0) {
+      std::cerr << (Index * 100.0) / GroupsByHash.size() << "%" << std::endl;
+    }
+    Index++;
   }
+  std::cerr << "DONE!" << std::endl;
 
-  std::set<unsigned> IndexesToRemove;
+  std::vector<unsigned> IndexesToRemove;
 
+  std::cerr << "Filtering clones" << std::endl;
   for (unsigned I = 0; I < result.size(); ++I) {
-    auto Mismatch = result[I];
+    const auto& Mismatch = result[I];
+    if (I % 1024 == 0) {
+      std::cerr << (I * 100.0) / result.size() << "%" << std::endl;
+    }
 
-    for (unsigned J = 0; J < result.size(); ++J) {
-      auto OtherMismatch = result[J];
-      if (I != J) {
-        if (OtherMismatch.Clones.CloneA.contains(Mismatch.Clones.CloneA) &&
-            OtherMismatch.Clones.CloneB.contains(Mismatch.Clones.CloneB)) {
-          IndexesToRemove.insert(I);
-          break;
-        }
-        if (I < J) {
-          if (OtherMismatch.MismatchA.getRange() == Mismatch.MismatchA.getRange()
-              || OtherMismatch.MismatchB.getRange() == Mismatch.MismatchB.getRange()
-              || OtherMismatch.MismatchA.getRange() == Mismatch.MismatchB.getRange()
-              || OtherMismatch.MismatchB.getRange() == Mismatch.MismatchA.getRange()) {
-            IndexesToRemove.insert(I);
-            break;
-          }
-        }
+    for (unsigned J = I + 1; J < result.size(); ++J) {
+      const auto& OtherMismatch = result[J];
+      if (OtherMismatch.MismatchA.getStartLocation() == Mismatch.MismatchA.getStartLocation()
+          || OtherMismatch.MismatchB.getStartLocation() == Mismatch.MismatchB.getStartLocation()
+          || OtherMismatch.MismatchA.getStartLocation() == Mismatch.MismatchB.getStartLocation()
+          || OtherMismatch.MismatchB.getStartLocation() == Mismatch.MismatchA.getStartLocation()) {
+        IndexesToRemove.push_back(I);
+        break;
       }
-
     }
   }
+  std::cerr << "Done" << std::endl;
 
   for (auto Iter = IndexesToRemove.rbegin();
        Iter != IndexesToRemove.rend();
@@ -678,10 +708,13 @@ namespace {
   }
 }
 
-bool StmtInfo::contains(StmtInfo other) const {
+bool StmtInfo::contains(const StmtInfo &other) const {
   if (S == other.S) {
-    if (EndIndex == 0) {
+    if (!HoldsSequence()) {
       return true;
+    }
+    if (!other.HoldsSequence()) {
+      return false;
     }
     if (StartIndex <= other.StartIndex && EndIndex >= other.EndIndex) {
       return true;
@@ -713,11 +746,11 @@ void FeatureVector::add(const std::string &FeatureName,
                         SourceLocation StartLocation, SourceLocation EndLocation) {
   for (std::size_t I = 0; I < FeatureNames.size(); ++I) {
     if (FeatureNames[I] == FeatureName) {
-      Locations.push_back(Feature(FeatureName, I, StartLocation, EndLocation));
+      Occurences.push_back(Feature(FeatureName, I, StartLocation, EndLocation));
       return;
     }
   }
-  Locations.push_back(Feature(FeatureName, FeatureNames.size(),
+  Occurences.push_back(Feature(FeatureName, FeatureNames.size(),
                               StartLocation, EndLocation));
   FeatureNames.push_back(FeatureName);
 }

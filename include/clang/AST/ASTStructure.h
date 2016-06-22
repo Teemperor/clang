@@ -17,12 +17,15 @@
 
 #include <unordered_map>
 #include <clang/AST/Stmt.h>
+#include <clang/AST/Type.h>
 #include <vector>
 
 namespace clang {
 
-class FeatureVector;
-
+///
+/// \brief The Feature class describes a piece of code that is important
+/// for the meaning of
+///
 class Feature {
   std::string Name;
   std::size_t NameIndex;
@@ -57,14 +60,34 @@ public:
   SourceRange getRange() const {
     return SourceRange(getStartLocation(), getEndLocation());
   }
+
+  bool operator==(const Feature& Other) const {
+    return NameIndex == Other.NameIndex && getRange() == Other.getRange();
+  }
+
+  bool operator!=(const Feature& Other) const {
+    return NameIndex != Other.NameIndex && getRange() != Other.getRange();
+  }
 };
 
+///
+/// \brief A vector of features of a piece of code.
+///
 class FeatureVector {
 
-  std::vector<Feature> Locations;
+  std::vector<Feature> Occurences;
   std::vector<std::string> FeatureNames;
 public:
 
+  ///
+  /// \brief Adds a new feature to the end of this vector.
+  /// \param FeatureName The name of the feature.
+  /// \param StartLocation The location in the source code where
+  ///                      this feature starts.
+  /// \param EndLocation The location in the source code where this
+  ///                    feature starts.
+  ///
+  ///
   void add(const std::string& FeatureName, SourceLocation StartLocation,
            SourceLocation EndLocation);
 
@@ -81,11 +104,20 @@ public:
     return FeatureNames.size();
   }
 
+  bool operator==(const FeatureVector& Other) {
+    return Occurences == Other.Occurences && FeatureNames == Other.FeatureNames;
+  }
+
+  bool operator!=(const FeatureVector& Other) {
+    return Occurences != Other.Occurences && FeatureNames != Other.FeatureNames;
+  }
+
   struct ComparisonResult {
     Feature FeatureThis;
     Feature FeatureOther;
     bool Success;
     bool Incompatible;
+    unsigned TotalErrorNumber;
   public:
     ComparisonResult() : Success(true), Incompatible(false) {
     }
@@ -94,19 +126,28 @@ public:
 
   ComparisonResult compare(const FeatureVector& other) {
     ComparisonResult result;
-    if (Locations.size() != other.Locations.size()) {
+    unsigned FirstErrorIndex;
+    unsigned TotalErrorNumber = 0;
+    if (Occurences.size() != other.Occurences.size()) {
       result.Incompatible = true;
       result.Success = false;
       return result;
     }
-    for (std::size_t I = 0; I < Locations.size(); ++I) {
-      if (Locations[I].getNameIndex() != other.Locations[I].getNameIndex()) {
-        result.Success = false;
-        result.Incompatible = false;
-        result.FeatureThis = Locations[I];
-        result.FeatureOther = other.Locations[I];
-        return result;
+    for (unsigned I = 0; I < Occurences.size(); ++I) {
+      if (Occurences[I].getNameIndex() != other.Occurences[I].getNameIndex()) {
+        if (TotalErrorNumber == 0) {
+          FirstErrorIndex = I;
+        }
+        ++TotalErrorNumber;
       }
+    }
+    if (TotalErrorNumber != 0) {
+      result.Success = false;
+      result.Incompatible = false;
+      result.FeatureThis = Occurences[FirstErrorIndex];
+      result.FeatureOther = other.Occurences[FirstErrorIndex];
+      result.TotalErrorNumber = TotalErrorNumber;
+      return result;
     }
 
     result.Success = true;
@@ -116,20 +157,30 @@ public:
 
 };
 
-
+///
+/// \brief Stores a piece of (executable) code. It can either hold
+/// a single Stmt or a sequence of statements inside a CompoundStmt.
+///
 struct StmtInfo {
   Stmt *S;
+  // If EndIndex is non-zero, then S is a CompoundStmt and this StmtInfo
+  // instance is representing the children inside
   unsigned StartIndex;
   unsigned EndIndex;
 
   StmtInfo(Stmt *Stmt, unsigned StartIndex, unsigned EndIndex)
     : S(Stmt), StartIndex(StartIndex), EndIndex(EndIndex) {
   }
+
   StmtInfo(Stmt *Stmt = nullptr) : StmtInfo(Stmt, 0, 0) {
   }
 
+  bool HoldsSequence() const {
+    return EndIndex != 0;
+  }
+
   SourceLocation getLocStart() const {
-    if (EndIndex != 0) {
+    if (HoldsSequence()) {
       auto CS = static_cast<CompoundStmt*>(S);
       return CS->body_begin()[StartIndex]->getLocStart();
     }
@@ -137,7 +188,7 @@ struct StmtInfo {
   }
 
   SourceLocation getLocEnd() const {
-    if (EndIndex != 0) {
+    if (HoldsSequence()) {
       auto CS = static_cast<CompoundStmt*>(S);
       return CS->body_begin()[StartIndex]->getLocEnd();
     }
@@ -150,7 +201,7 @@ struct StmtInfo {
         EndIndex == other.EndIndex;
   }
 
-  bool contains(StmtInfo other) const;
+  bool contains(const StmtInfo& other) const;
 
   bool equal(const StmtInfo& other);
 };
@@ -175,9 +226,8 @@ namespace clang {
 class StmtFeature {
 
 public:
-  // TODO More than just named decl support
   enum StmtFeatureKind {
-    NamedDecl = 0,
+    VariableName = 0,
     FunctionName = 1,
     END
   };
@@ -205,6 +255,8 @@ public:
     }
   };
 
+  unsigned differentFeatureVectors(const StmtFeature& other);
+
   CompareResult compare(const StmtFeature& other) {
     for (unsigned Kind = 0; Kind < END; ++Kind) {
       FeatureVector::ComparisonResult vectorResult =
@@ -217,8 +269,15 @@ public:
     return CompareResult();
   }
 
+  void AddType(const QualType &T) {
+    Types.push_back(T);
+  }
+
+  bool TypeCompatible(const StmtFeature& Other);
+
 private:
   FeatureVector Features[END];
+  std::vector<QualType> Types;
 };
 
 
@@ -242,12 +301,12 @@ public:
 
   struct StmtData {
     unsigned Hash;
-    unsigned Children;
+    unsigned Complexity;
     StmtData() {
     }
 
-    StmtData(unsigned Hash, unsigned Children)
-      : Hash(Hash), Children(Children) {
+    StmtData(unsigned Hash, unsigned Complexity)
+      : Hash(Hash), Complexity(Complexity) {
     }
   };
 
@@ -287,24 +346,24 @@ public:
   ///        to the storage of this ASTStructure object.
   ///
   /// \param Hash the hash code of the given Stmt.
-  /// \param Children the children of this
+  /// \param Complexity the Complexity of the given Stmt
   /// \param S the given Stmt.
-  void add(unsigned Hash, unsigned Children, Stmt *S) {
-    HashedStmts.insert(std::make_pair(S, StmtData(Hash, Children)));
+  void add(unsigned Hash, unsigned Complexity, Stmt *S) {
+    HashedStmts.insert(std::make_pair(S, StmtData(Hash, Complexity)));
   }
 
   /// \brief Adds with the given Stmt with the associated structure hash code
   ///        to the storage of this ASTStructure object.
   ///
   /// \param Hash the hash code of the given Stmt.
-  /// \param Children the children of this.
+  /// \param Complexity the Complexity of this.
   /// \param S the given Stmt.
   /// \param StartIndex the inclusive start index if the Stmt is a CompoundStmt.
   /// \param EndIndex the exclusive end index if the Stmt is a CompoundStmt.
-  void add(unsigned Hash, unsigned Children, Stmt *S,
+  void add(unsigned Hash, unsigned Complexity, Stmt *S,
            unsigned StartIndex, unsigned EndIndex) {
     HashedStmts.insert(std::make_pair(StmtInfo(S, StartIndex, EndIndex),
-                                      StmtData(Hash, Children)));
+                                      StmtData(Hash, Complexity)));
   }
 
   struct CloneInfo {
@@ -337,7 +396,7 @@ public:
     }
   };
 
-  std::vector<CloneMismatch> findCloneErrors();
+  std::vector<CloneMismatch> findCloneErrors(unsigned MinGroupComplexity = 50);
 
 private:
   std::unordered_map<StmtInfo, StmtData> HashedStmts;

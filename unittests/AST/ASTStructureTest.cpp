@@ -712,7 +712,7 @@ TEST(StmtFeature, Test) {
 
   StmtFeature::CompareResult CompareResult = FeatureA.compare(FeatureB);
 
-  assert(CompareResult.MismatchKind == StmtFeature::StmtFeatureKind::NamedDecl);
+  assert(CompareResult.MismatchKind == StmtFeature::StmtFeatureKind::VariableName);
   assert(CompareResult.result.Success == false);
   assert(CompareResult.result.Incompatible == false);
   assert(CompareResult.result.FeatureThis.getNameIndex() == 1);
