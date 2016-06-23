@@ -27,7 +27,6 @@ namespace clang {
 /// for the meaning of
 ///
 class Feature {
-  std::string Name;
   std::size_t NameIndex;
   SourceLocation StartLocation;
   SourceLocation EndLocation;
@@ -35,14 +34,9 @@ public:
   Feature() {
   }
 
-  Feature(const std::string& Name, std::size_t NameIndex,
+  Feature(std::size_t NameIndex,
           SourceLocation StartLoc, SourceLocation EndLoc)
-    : Name(Name), NameIndex(NameIndex),
-      StartLocation(StartLoc), EndLocation(EndLoc) {
-  }
-
-  const std::string& getName() const {
-    return Name;
+    : NameIndex(NameIndex), StartLocation(StartLoc), EndLocation(EndLoc) {
   }
 
   std::size_t getNameIndex() const {
@@ -91,30 +85,33 @@ public:
   void add(const std::string& FeatureName, SourceLocation StartLocation,
            SourceLocation EndLocation);
 
-  const std::string& getName(std::size_t NameIndex) const {
-    assert(getNumberOfNames() > NameIndex);
+  const std::string& GetName(std::size_t NameIndex) const {
+    assert(GetNumberOfNames() > NameIndex);
     return FeatureNames[NameIndex];
   }
 
-  bool hasNameForIndex(std::size_t NameIndex) const {
-    return getNumberOfNames() > NameIndex;
+  bool HasNameForIndex(std::size_t NameIndex) const {
+    return GetNumberOfNames() > NameIndex;
   }
 
-  std::size_t getNumberOfNames() const {
+  Feature GetFeature(unsigned Index) const {
+    return Occurences[Index];
+  }
+
+  std::size_t GetNumberOfNames() const {
     return FeatureNames.size();
   }
 
-  bool operator==(const FeatureVector& Other) {
+  bool operator==(const FeatureVector& Other) const {
     return Occurences == Other.Occurences && FeatureNames == Other.FeatureNames;
   }
 
-  bool operator!=(const FeatureVector& Other) {
+  bool operator!=(const FeatureVector& Other) const {
     return Occurences != Other.Occurences && FeatureNames != Other.FeatureNames;
   }
 
   struct ComparisonResult {
-    Feature FeatureThis;
-    Feature FeatureOther;
+    unsigned MismatchingFeatureIndex;
     bool Success;
     bool Incompatible;
     unsigned TotalErrorNumber;
@@ -144,8 +141,7 @@ public:
     if (TotalErrorNumber != 0) {
       result.Success = false;
       result.Incompatible = false;
-      result.FeatureThis = Occurences[FirstErrorIndex];
-      result.FeatureOther = other.Occurences[FirstErrorIndex];
+      result.MismatchingFeatureIndex = FirstErrorIndex;
       result.TotalErrorNumber = TotalErrorNumber;
       return result;
     }
@@ -366,34 +362,60 @@ public:
                                       StmtData(Hash, Complexity)));
   }
 
-  struct CloneInfo {
-    StmtInfo CloneA;
-    StmtInfo CloneB;
-    CloneInfo(StmtInfo CloneA, StmtInfo CloneB)
-      : CloneA(CloneA), CloneB(CloneB) {
+  class CloneMismatchPart {
+    StmtInfo Stmt;
+    FeatureVector Features;
+    std::string SuggestedFeature;
+    unsigned MismatchIndex;
+  public:
+    CloneMismatchPart(StmtInfo Stmt, FeatureVector Features,
+                      unsigned MismatchIndex)
+      : Stmt(Stmt), Features(Features), MismatchIndex(MismatchIndex) {
     }
-    CloneInfo(){
+    CloneMismatchPart() {
+    }
+
+    void SuggestFeature(const std::string& Feature) {
+      SuggestedFeature = Feature;
+    }
+
+    StmtInfo GetStmt() const {
+      return Stmt;
+    }
+
+    Feature GetFeature() const {
+      return Features.GetFeature(MismatchIndex);
+    }
+
+    std::string GetFeatureName() const {
+      return Features.GetName(GetFeature().getNameIndex());
+    }
+
+    bool HasSuggestion() {
+      return !SuggestedFeature.empty();
+    }
+
+    const std::string& GetSuggestion() const {
+      return SuggestedFeature;
+    }
+
+    const FeatureVector& GetFeatures() const {
+      return Features;
     }
   };
 
   struct CloneMismatch {
-    CloneInfo Clones;
-    Feature MismatchA;
-    Feature MismatchB;
-    FeatureVector FeaturesA;
-    FeatureVector FeaturesB;
+    CloneMismatchPart A;
+    CloneMismatchPart B;
+    unsigned MismatchIndex;
     StmtFeature::StmtFeatureKind MismatchKind;
   public:
     CloneMismatch() {
     }
 
-    CloneMismatch(CloneInfo Clones, Feature MismatchA, Feature MismatchB,
-                  FeatureVector FeaturesA, FeatureVector FeaturesB,
-                  StmtFeature::StmtFeatureKind MismatchKind)
-      : Clones(Clones), MismatchA(MismatchA), MismatchB(MismatchB),
-        FeaturesA(FeaturesA), FeaturesB(FeaturesB),
-        MismatchKind(MismatchKind) {
-    }
+    CloneMismatch(CloneMismatchPart OnePart, CloneMismatchPart OtherPart,
+                  unsigned MismatchIndex,
+                  StmtFeature::StmtFeatureKind MismatchKind);
   };
 
   std::vector<CloneMismatch> findCloneErrors(unsigned MinGroupComplexity = 50);

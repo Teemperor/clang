@@ -619,11 +619,13 @@ void SearchForCloneErrors(std::vector<ASTStructure::CloneMismatch>& output,
 
             output.push_back(
               ASTStructure::CloneMismatch(
-                ASTStructure::CloneInfo(CurrentStmt, OtherStmt),
-                CompareResult.result.FeatureThis,
-                CompareResult.result.FeatureOther,
-                CompareResult.FeaturesThis,
-                CompareResult.FeaturesOther,
+                ASTStructure::CloneMismatchPart(
+                      CurrentStmt, CompareResult.FeaturesThis,
+                      CompareResult.result.MismatchingFeatureIndex),
+                ASTStructure::CloneMismatchPart(
+                      OtherStmt, CompareResult.FeaturesOther,
+                      CompareResult.result.MismatchingFeatureIndex),
+                CompareResult.result.MismatchingFeatureIndex,
                 CompareResult.MismatchKind
               )
             );
@@ -637,7 +639,7 @@ void SearchForCloneErrors(std::vector<ASTStructure::CloneMismatch>& output,
 
 std::vector<ASTStructure::CloneMismatch> ASTStructure::findCloneErrors(
     unsigned MinGroupComplexity) {
-  std::vector<ASTStructure::CloneMismatch> result;
+  std::vector<ASTStructure::CloneMismatch> Result;
 
   std::map<unsigned, std::vector<StmtInfo> > GroupsByHash;
 
@@ -647,48 +649,34 @@ std::vector<ASTStructure::CloneMismatch> ASTStructure::findCloneErrors(
     }
   }
 
-  std::cerr << "Finding errors in groups..." << std::endl;
-  unsigned Index = 0;
   for (auto& HashGroupPair : GroupsByHash) {
     if (HashGroupPair.second.size() > 1) {
-      SearchForCloneErrors(result, HashGroupPair.second);
+      SearchForCloneErrors(Result, HashGroupPair.second);
     }
-    if (Index % 1000 == 0) {
-      std::cerr << (Index * 100.0) / GroupsByHash.size() << "%" << std::endl;
-    }
-    Index++;
   }
-  std::cerr << "DONE!" << std::endl;
 
   std::vector<unsigned> IndexesToRemove;
-
-  std::cerr << "Filtering clones" << std::endl;
-  for (unsigned I = 0; I < result.size(); ++I) {
-    const auto& Mismatch = result[I];
-    if (I % 1024 == 0) {
-      std::cerr << (I * 100.0) / result.size() << "%" << std::endl;
-    }
-
-    for (unsigned J = I + 1; J < result.size(); ++J) {
-      const auto& OtherMismatch = result[J];
-      if (OtherMismatch.MismatchA.getStartLocation() == Mismatch.MismatchA.getStartLocation()
-          || OtherMismatch.MismatchB.getStartLocation() == Mismatch.MismatchB.getStartLocation()
-          || OtherMismatch.MismatchA.getStartLocation() == Mismatch.MismatchB.getStartLocation()
-          || OtherMismatch.MismatchB.getStartLocation() == Mismatch.MismatchA.getStartLocation()) {
+  for (unsigned I = 0; I < Result.size(); ++I) {
+    const auto& Mismatch = Result[I];
+    for (unsigned J = I + 1; J < Result.size(); ++J) {
+      const auto& OtherMismatch = Result[J];
+      if (OtherMismatch.A.GetFeature().getStartLocation() == Mismatch.A.GetFeature().getStartLocation()
+          || OtherMismatch.B.GetFeature().getStartLocation() == Mismatch.B.GetFeature().getStartLocation()
+          || OtherMismatch.A.GetFeature().getStartLocation() == Mismatch.B.GetFeature().getStartLocation()
+          || OtherMismatch.B.GetFeature().getStartLocation() == Mismatch.A.GetFeature().getStartLocation()) {
         IndexesToRemove.push_back(I);
         break;
       }
     }
   }
-  std::cerr << "Done" << std::endl;
 
   for (auto Iter = IndexesToRemove.rbegin();
        Iter != IndexesToRemove.rend();
        ++Iter) {
-    result.erase(result.begin() + (*Iter));
+    Result.erase(Result.begin() + (*Iter));
   }
 
-  return result;
+  return Result;
 }
 
 namespace {
@@ -744,11 +732,26 @@ void FeatureVector::add(const std::string &FeatureName,
                         SourceLocation StartLocation, SourceLocation EndLocation) {
   for (std::size_t I = 0; I < FeatureNames.size(); ++I) {
     if (FeatureNames[I] == FeatureName) {
-      Occurences.push_back(Feature(FeatureName, I, StartLocation, EndLocation));
+      Occurences.push_back(Feature(I, StartLocation, EndLocation));
       return;
     }
   }
-  Occurences.push_back(Feature(FeatureName, FeatureNames.size(),
+  Occurences.push_back(Feature(FeatureNames.size(),
                               StartLocation, EndLocation));
   FeatureNames.push_back(FeatureName);
+}
+
+ASTStructure::CloneMismatch::CloneMismatch(
+    ASTStructure::CloneMismatchPart OnePart,
+    ASTStructure::CloneMismatchPart OtherPart,
+    unsigned MismatchIndex, StmtFeature::StmtFeatureKind MismatchKind)
+  : A(OnePart), B(OtherPart), MismatchIndex(MismatchIndex), MismatchKind(MismatchKind) {
+  bool HasSuggestionA = A.GetFeatures().HasNameForIndex(B.GetFeature().getNameIndex());
+  bool HasSuggestionB = B.GetFeatures().HasNameForIndex(A.GetFeature().getNameIndex());
+
+  if (HasSuggestionA)
+    A.SuggestFeature(A.GetFeatures().GetName(B.GetFeature().getNameIndex()));
+
+  if (HasSuggestionB)
+    B.SuggestFeature(B.GetFeatures().GetName(A.GetFeature().getNameIndex()));
 }

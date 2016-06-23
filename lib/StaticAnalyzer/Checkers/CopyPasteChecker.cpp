@@ -65,40 +65,36 @@ void CopyPasteChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
                                      " is here. Maybe you wanted to use '%0'"
                                      " instead of '%1'?");
 
-      SourceLocation LocA = Clone.MismatchA.getStartLocation();
-      SourceLocation LocB = Clone.MismatchB.getStartLocation();
+      SourceLocation LocA = Clone.A.GetFeature().getStartLocation();
+      SourceLocation LocB = Clone.B.GetFeature().getStartLocation();
 
-      bool HasSuggestionA = Clone.FeaturesA.hasNameForIndex(Clone.MismatchB.getNameIndex());
-      bool HasSuggestionB = Clone.FeaturesB.hasNameForIndex(Clone.MismatchA.getNameIndex());
-
-
-      std::string SuggestedFeatureA, SuggestedFeatureB;
-      if (HasSuggestionA)
-        SuggestedFeatureA = Clone.FeaturesA.getName(Clone.MismatchB.getNameIndex());
-
-      if (HasSuggestionB)
-        SuggestedFeatureB = Clone.FeaturesB.getName(Clone.MismatchA.getNameIndex());
-
-      if (HasSuggestionA && HasSuggestionB) {
+      if (Clone.A.HasSuggestion() && Clone.B.HasSuggestion()) {
           DiagEngine.Report(LocA, WarnWithSuggestionID) <<
-                Clone.MismatchA.getRange() <<
-                SuggestedFeatureA << Clone.MismatchA.getName();
+                Clone.A.GetFeature().getRange() <<
+                Clone.A.GetSuggestion() << Clone.A.GetFeatureName();
+
           DiagEngine.Report(LocB, NoteWithSuggestionID) <<
-                Clone.MismatchB.getRange() <<
-                SuggestedFeatureB << Clone.MismatchB.getName();
-      } else if (HasSuggestionA && !HasSuggestionB) {
+                Clone.B.GetFeature().getRange() <<
+                Clone.B.GetSuggestion() << Clone.B.GetFeatureName();
+
+      } else if (Clone.A.HasSuggestion() && !Clone.B.HasSuggestion()) {
           DiagEngine.Report(LocA, WarnWithSuggestionID) <<
-                Clone.MismatchA.getRange() << SuggestedFeatureA
-                << Clone.MismatchA.getName();
-          DiagEngine.Report(LocB, NoteID) << Clone.MismatchB.getRange();
-      } else if (!HasSuggestionA && HasSuggestionB) {
+                Clone.A.GetFeature().getRange() << Clone.A.GetSuggestion()
+                << Clone.A.GetFeatureName();
+
+          DiagEngine.Report(LocB, NoteID) << Clone.B.GetFeature().getRange();
+
+      } else if (!Clone.A.HasSuggestion() && Clone.B.HasSuggestion()) {
+
           DiagEngine.Report(LocB, NoteWithSuggestionID) <<
-                Clone.MismatchB.getRange() << SuggestedFeatureB
-                << Clone.MismatchB.getName();
-          DiagEngine.Report(LocA, NoteID) << Clone.MismatchA.getRange();
+                Clone.B.GetFeature().getRange() << Clone.B.GetSuggestion()
+                << Clone.B.GetSuggestion();
+
+          DiagEngine.Report(LocA, NoteID) << Clone.A.GetFeature().getRange();
       } else {
-          DiagEngine.Report(LocA, WarnID) << Clone.MismatchA.getRange();
-          DiagEngine.Report(LocA, NoteID) << Clone.MismatchB.getRange();
+          std::cerr << "Suggest: '" << Clone.A.GetSuggestion() << "'" << std::endl;
+          DiagEngine.Report(LocA, WarnID) << Clone.A.GetFeature().getRange();
+          DiagEngine.Report(LocA, NoteID) << Clone.B.GetFeature().getRange();
       }
   }
 }
