@@ -71,6 +71,8 @@ class FeatureVector {
 
   std::vector<Feature> Occurences;
   std::vector<std::string> FeatureNames;
+  std::vector<QualType> FeatureTypes;
+
 public:
 
   ///
@@ -82,12 +84,17 @@ public:
   ///                    feature starts.
   ///
   ///
-  void add(const std::string& FeatureName, SourceLocation StartLocation,
-           SourceLocation EndLocation);
+  void add(const std::string& FeatureName, QualType FeatureType,
+           SourceLocation StartLocation, SourceLocation EndLocation);
 
-  const std::string& GetName(std::size_t NameIndex) const {
-    assert(GetNumberOfNames() > NameIndex);
-    return FeatureNames[NameIndex];
+  const std::string& GetName(std::size_t FeatureId) const {
+    assert(GetNumberOfNames() > FeatureId);
+    return FeatureNames[FeatureId];
+  }
+
+  QualType GetType(std::size_t FeatureId) const {
+    assert(GetNumberOfNames() > FeatureId);
+    return FeatureTypes[FeatureId];
   }
 
   bool HasNameForIndex(std::size_t NameIndex) const {
@@ -231,7 +238,8 @@ public:
   StmtFeature(StmtInfo S);
 
   void add(const std::string& Name, SourceLocation StartLoc,
-           SourceLocation EndLoc, StmtFeatureKind Kind);
+           SourceLocation EndLoc, StmtFeatureKind Kind,
+           QualType T);
 
   struct CompareResult {
     StmtFeatureKind MismatchKind;
@@ -265,15 +273,8 @@ public:
     return CompareResult();
   }
 
-  void AddType(const QualType &T) {
-    Types.push_back(T);
-  }
-
-  bool TypeCompatible(const StmtFeature& Other);
-
 private:
   FeatureVector Features[END];
-  std::vector<QualType> Types;
 };
 
 

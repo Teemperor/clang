@@ -122,6 +122,12 @@ private:
     }
   }
 
+  void CalcHash(const std::string &String) {
+    for (char c : String) {
+      CalcHash(static_cast<unsigned>(c));
+    }
+  }
+
   // Merges the hash code of the given Stmt into the
   // current hash code. Stmts that weren't hashed before by this visitor
   // are ignored.
@@ -130,6 +136,10 @@ private:
     if (I.Success) {
       CalcHash(I.Data.Hash);
     }
+  }
+
+  void CalcHash(QualType QT) {
+    CalcHash(QT.getAsString());
   }
 
   // Saves the current hash code into the persistent storage of this
@@ -322,7 +332,9 @@ DEF_STMT_VISIT(CStyleCastExpr, {})
 DEF_STMT_VISIT(ObjCBridgedCastExpr, { CalcHash(S->getBridgeKind()); })
 
 //--- Miscellaneous Exprs --------------------------------------------------//
-DEF_STMT_VISIT(Expr, {})
+DEF_STMT_VISIT(Expr, {
+                 CalcHash(S->getType());
+               })
 DEF_STMT_VISIT(ParenExpr, {})
 DEF_STMT_VISIT(ArraySubscriptExpr, {})
 DEF_STMT_VISIT(BinaryOperator, { CalcHash(S->getOpcode()); })
@@ -513,29 +525,20 @@ public:
   FeatureCollectVisitor(StmtFeature &Feature) : Feature(Feature) {
   }
 
-  bool VisitNamedDecl(NamedDecl *D) {
-    Feature.add(D->getQualifiedNameAsString(), D->getLocStart(), D->getLocEnd(),
-                StmtFeature::StmtFeatureKind::VariableName);
-    return true;
-  }
-
   bool VisitDeclRefExpr(DeclRefExpr *D) {
     if (auto ND = dyn_cast<NamedDecl>(D->getDecl())) {
       Feature.add(ND->getQualifiedNameAsString(), D->getLocStart(),
-                  D->getLocEnd(), StmtFeature::StmtFeatureKind::VariableName);
+                  D->getLocEnd(), StmtFeature::StmtFeatureKind::VariableName,
+                  D->getDecl()->getType());
     }
-    return true;
-  }
-
-  bool VisitExpr(Expr *E) {
-    Feature.AddType(E->getType());
     return true;
   }
 
   bool VisitCXXMemberCallExpr(CXXMemberCallExpr *E) {
     Feature.add(E->getMethodDecl()->getQualifiedNameAsString(),
                 E->getLocStart(), E->getLocEnd(),
-                StmtFeature::StmtFeatureKind::FunctionName);
+                StmtFeature::StmtFeatureKind::FunctionName,
+                E->getMethodDecl()->getReturnType());
     return true;
   }
 };
@@ -553,8 +556,9 @@ StmtFeature::StmtFeature(StmtInfo Info) {
 }
 
 void StmtFeature::add(const std::string &Name, SourceLocation StartLoc,
-                      SourceLocation EndLoc, StmtFeatureKind Kind) {
-  Features[Kind].add(Name, StartLoc, EndLoc);
+                      SourceLocation EndLoc, StmtFeatureKind Kind,
+                      QualType T) {
+  Features[Kind].add(Name, T, StartLoc, EndLoc);
 }
 
 unsigned StmtFeature::differentFeatureVectors(const StmtFeature &other) {
@@ -566,10 +570,6 @@ unsigned StmtFeature::differentFeatureVectors(const StmtFeature &other) {
     }
   }
   return Result;
-}
-
-bool StmtFeature::TypeCompatible(const StmtFeature &Other) {
-  return Types == Other.Types;
 }
 
 namespace {
@@ -609,8 +609,7 @@ void SearchForCloneErrors(std::vector<ASTStructure::CloneMismatch>& output,
         StmtFeature CurrentFeature(CurrentStmt);
         StmtFeature OtherFeature(OtherStmt);
 
-        if (CurrentFeature.differentFeatureVectors(OtherFeature) == 1
-            && CurrentFeature.TypeCompatible(OtherFeature)) {
+        if (CurrentFeature.differentFeatureVectors(OtherFeature) == 1) {
           StmtFeature::CompareResult CompareResult =
               CurrentFeature.compare(OtherFeature);
 
@@ -728,7 +727,7 @@ bool StmtInfo::equal(const StmtInfo &other) {
   return true;
 }
 
-void FeatureVector::add(const std::string &FeatureName,
+void FeatureVector::add(const std::string &FeatureName, QualType FeatureType,
                         SourceLocation StartLocation, SourceLocation EndLocation) {
   for (std::size_t I = 0; I < FeatureNames.size(); ++I) {
     if (FeatureNames[I] == FeatureName) {
@@ -739,6 +738,7 @@ void FeatureVector::add(const std::string &FeatureName,
   Occurences.push_back(Feature(FeatureNames.size(),
                               StartLocation, EndLocation));
   FeatureNames.push_back(FeatureName);
+  FeatureTypes.push_back(FeatureType);
 }
 
 ASTStructure::CloneMismatch::CloneMismatch(
@@ -746,12 +746,19 @@ ASTStructure::CloneMismatch::CloneMismatch(
     ASTStructure::CloneMismatchPart OtherPart,
     unsigned MismatchIndex, StmtFeature::StmtFeatureKind MismatchKind)
   : A(OnePart), B(OtherPart), MismatchIndex(MismatchIndex), MismatchKind(MismatchKind) {
-  bool HasSuggestionA = A.GetFeatures().HasNameForIndex(B.GetFeature().getNameIndex());
-  bool HasSuggestionB = B.GetFeatures().HasNameForIndex(A.GetFeature().getNameIndex());
+  bool HasSuggestionA =
+      A.GetFeatures().HasNameForIndex(B.GetFeature().getNameIndex());
+  bool HasSuggestionB =
+      B.GetFeatures().HasNameForIndex(A.GetFeature().getNameIndex());
 
-  if (HasSuggestionA)
-    A.SuggestFeature(A.GetFeatures().GetName(B.GetFeature().getNameIndex()));
+  auto AIndex = A.GetFeature().getNameIndex();
+  auto BIndex = B.GetFeature().getNameIndex();
 
-  if (HasSuggestionB)
-    B.SuggestFeature(B.GetFeatures().GetName(A.GetFeature().getNameIndex()));
+  if (HasSuggestionA &&
+      A.GetFeatures().GetType(AIndex) == A.GetFeatures().GetType(BIndex))
+    A.SuggestFeature(A.GetFeatures().GetName(BIndex));
+
+  if (HasSuggestionB &&
+      B.GetFeatures().GetType(AIndex) == B.GetFeatures().GetType(BIndex))
+    B.SuggestFeature(B.GetFeatures().GetName(AIndex));
 }

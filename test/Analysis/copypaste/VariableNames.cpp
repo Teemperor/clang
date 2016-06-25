@@ -13,8 +13,8 @@ extern int m2_global;
 
 extern int var2_accesses;
 
-int read1_clutter1() {
-  int timer = 0;
+int read1() {
+  unsigned timer = 0;
   while(true) {
     if (m1.try_lock()) {
       int result = m1_global;
@@ -29,7 +29,7 @@ int read1_clutter1() {
 
 int read2() {
   var2_accesses++;
-  int timer = 0;
+  unsigned timer = 0;
   while(true) {
     if (m2.try_lock()) {
       int result = m2_global;
@@ -42,43 +42,12 @@ int read2() {
   }
 }
 
-
-int read1() {
-  int timer = 0;
+int read3() {
+  unsigned timer = 0;
   while(true) {
     if (m1.try_lock()) {
       int result = m1_global;
       m1.unlock(); // expected-note{{Other possibly faulty code clone instance is here.}}
-      return result;
-    } else {
-      // busy wait
-      timer++;
-    }
-  }
-}
-
-
-int read1_clutter2() {
-  int timer = 0;
-  while(true) {
-    if (m1.try_lock()) {
-      int result = m1_global;
-      m1.unlock();
-      return result;
-    } else {
-      // busy wait
-      timer++;
-    }
-  }
-}
-
-
-int read1_clutter3() {
-  int timer = 0;
-  while(true) {
-    if (m1.try_lock()) {
-      int result = m1_global;
-      m1.unlock();
       return result;
     } else {
       // busy wait

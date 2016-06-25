@@ -35,8 +35,6 @@ public:
 };
 } // end anonymous namespace
 
-#include <iostream>
-
 void CopyPasteChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
                                                   AnalysisManager &Mgr,
                                                   BugReporter &BR) const {
@@ -50,15 +48,17 @@ void CopyPasteChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
       unsigned WarnID =
           DiagEngine.getCustomDiagID(DiagnosticsEngine::Warning,
                                      "Possibly faulty code clone.");
-      unsigned NoteID =
-          DiagEngine.getCustomDiagID(DiagnosticsEngine::Note,
-                                     "Other possibly faulty code clone instance"
-                                     " is here.");
 
       unsigned WarnWithSuggestionID =
           DiagEngine.getCustomDiagID(DiagnosticsEngine::Warning,
                                      "Possibly faulty code clone. Maybe "
                                      "you wanted to use '%0' instead of '%1'?");
+
+      unsigned NoteID =
+          DiagEngine.getCustomDiagID(DiagnosticsEngine::Note,
+                                     "Other possibly faulty code clone instance"
+                                     " is here.");
+
       unsigned NoteWithSuggestionID =
           DiagEngine.getCustomDiagID(DiagnosticsEngine::Note,
                                      "Other possibly faulty code clone instance"
@@ -92,7 +92,6 @@ void CopyPasteChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
 
           DiagEngine.Report(LocA, NoteID) << Clone.A.GetFeature().getRange();
       } else {
-          std::cerr << "Suggest: '" << Clone.A.GetSuggestion() << "'" << std::endl;
           DiagEngine.Report(LocA, WarnID) << Clone.A.GetFeature().getRange();
           DiagEngine.Report(LocA, NoteID) << Clone.B.GetFeature().getRange();
       }
