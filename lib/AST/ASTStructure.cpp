@@ -88,16 +88,8 @@ public:
 private:
 
   bool shouldSkipStmt(Stmt *S) {
-    switch (S->getStmtClass()) {
-    case Stmt::FloatingLiteralClass:
-    case Stmt::CXXBoolLiteralExprClass:
-    case Stmt::ObjCBoolLiteralExprClass:
-    case Stmt::IntegerLiteralClass:
-      return false;
-    default:
-      return Context.getSourceManager().IsInAnyMacroBody(S->getLocStart()) ||
-             Context.getSourceManager().IsInAnyMacroBody(S->getLocEnd());
-    }
+    return Context.getSourceManager().IsInAnyMacroBody(S->getLocStart()) ||
+           Context.getSourceManager().IsInAnyMacroBody(S->getLocEnd());
   }
 
   // Marks the current Stmt as no to be processed.
@@ -265,21 +257,9 @@ DEF_STMT_VISIT(SEHLeaveStmt, {})
 DEF_STMT_VISIT(SEHTryStmt, {})
 
 //--- Literals -------------------------------------------------------------//
-DEF_STMT_VISIT(CharacterLiteral, {
-  // We treat all literals as integer literals
-  // as the hash is type independent
-  ClassHash = Stmt::StmtClass::IntegerLiteralClass;
-})
-DEF_STMT_VISIT(FloatingLiteral, {
-  // We treat all literals as integer literals
-  // as the hash is type independent
-  ClassHash = Stmt::StmtClass::IntegerLiteralClass;
-})
-DEF_STMT_VISIT(ImaginaryLiteral, {
-  // We treat all literals as integer literals
-  // as the hash is type independent
-  ClassHash = Stmt::StmtClass::IntegerLiteralClass;
-})
+DEF_STMT_VISIT(CharacterLiteral, {})
+DEF_STMT_VISIT(FloatingLiteral, {})
+DEF_STMT_VISIT(ImaginaryLiteral, {})
 DEF_STMT_VISIT(IntegerLiteral, {})
 
 DEF_STMT_VISIT(ObjCBoolLiteralExpr, {})
