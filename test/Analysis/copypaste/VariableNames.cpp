@@ -5,20 +5,20 @@ struct mutex {
   void unlock() {}
 };
 
-extern mutex m1;
-extern int m1_global;
+extern mutex mutex1;
+extern int mutex1_global;
 
-extern mutex m2;
-extern int m2_global;
+extern mutex mutex2;
+extern int mutex2_global;
 
 extern int var2_accesses;
 
 int read1() {
   unsigned timer = 0;
   while(true) {
-    if (m1.try_lock()) {
-      int result = m1_global;
-      m1.unlock();
+    if (mutex1.try_lock()) {
+      int result = mutex1_global;
+      mutex1.unlock();
       return result;
     } else {
       // busy wait
@@ -31,9 +31,9 @@ int read2() {
   var2_accesses++;
   unsigned timer = 0;
   while(true) {
-    if (m2.try_lock()) {
-      int result = m2_global;
-      m1.unlock(); // expected-warning{{Possibly faulty code clone. Maybe you wanted to use 'm2' instead of 'm1'?}}
+    if (mutex2.try_lock()) {
+      int result = mutex2_global;
+      mutex1.unlock(); // expected-warning{{Maybe you wanted to use 'mutex2' instead of 'mutex1'?}}
       return result;
     } else {
       // busy wait
@@ -45,9 +45,9 @@ int read2() {
 int read3() {
   unsigned timer = 0;
   while(true) {
-    if (m1.try_lock()) {
-      int result = m1_global;
-      m1.unlock(); // expected-note{{Other possibly faulty code clone instance is here.}}
+    if (mutex1.try_lock()) {
+      int result = mutex1_global;
+      mutex1.unlock(); // expected-note{{Suggestion is based on this similar algorithm.}}
       return result;
     } else {
       // busy wait

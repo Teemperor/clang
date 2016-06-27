@@ -12,7 +12,7 @@ struct Image {
 };
 void assert(bool) {}
 
-GTEST_FOO(WidthRanges, { // expected-note{{Other possibly faulty code clone instance is here.}}
+GTEST_FOO(WidthRanges, { // expected-note{{Suggestion is based on this similar algorithm.}}
   Image img;
   img.setWidth(5);
   assert(img.width() == 5);
@@ -22,7 +22,7 @@ GTEST_FOO(WidthRanges, { // expected-note{{Other possibly faulty code clone inst
   assert(img.width() == 0);
 })
 
-GTEST_FOO(HeightRanges, { // expected-warning{{Possibly faulty code clone. Maybe you wanted to use 'Image::setHeight' instead of 'Image::setWidth'?}}
+GTEST_FOO(HeightRanges, { // expected-warning{{Maybe you wanted to use 'Image::setHeight' instead of 'Image::setWidth'?}}
   Image img;
   img.setHeight(5);
   assert(img.height() == 5);

@@ -45,25 +45,17 @@ void CopyPasteChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
   DiagnosticsEngine& DiagEngine = Mgr.getDiagnostic();
 
   for (ASTStructure::CloneMismatch Clone : Clones) {
-      unsigned WarnID =
-          DiagEngine.getCustomDiagID(DiagnosticsEngine::Warning,
-                                     "Possibly faulty code clone.");
-
       unsigned WarnWithSuggestionID =
           DiagEngine.getCustomDiagID(DiagnosticsEngine::Warning,
-                                     "Possibly faulty code clone. Maybe "
-                                     "you wanted to use '%0' instead of '%1'?");
+                                     "Maybe you wanted to use '%0' instead of '%1'?");
 
       unsigned NoteID =
           DiagEngine.getCustomDiagID(DiagnosticsEngine::Note,
-                                     "Other possibly faulty code clone instance"
-                                     " is here.");
+                                     "Suggestion is based on this similar algorithm.");
 
       unsigned NoteWithSuggestionID =
           DiagEngine.getCustomDiagID(DiagnosticsEngine::Note,
-                                     "Other possibly faulty code clone instance"
-                                     " is here. Maybe you wanted to use '%0'"
-                                     " instead of '%1'?");
+                                     "Maybe you wanted to use '%0' instead of '%1'?");
 
       SourceLocation LocA = Clone.A.GetFeature().getStartLocation();
       SourceLocation LocB = Clone.B.GetFeature().getStartLocation();
@@ -77,23 +69,19 @@ void CopyPasteChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
                 Clone.B.GetFeature().getRange() <<
                 Clone.B.GetSuggestion() << Clone.B.GetFeatureName();
 
-      } else if (Clone.A.HasSuggestion() && !Clone.B.HasSuggestion()) {
+      } else if (Clone.A.HasSuggestion()) {
           DiagEngine.Report(LocA, WarnWithSuggestionID) <<
                 Clone.A.GetFeature().getRange() << Clone.A.GetSuggestion()
                 << Clone.A.GetFeatureName();
 
           DiagEngine.Report(LocB, NoteID) << Clone.B.GetFeature().getRange();
 
-      } else if (!Clone.A.HasSuggestion() && Clone.B.HasSuggestion()) {
-
+      } else if (Clone.B.HasSuggestion()) {
           DiagEngine.Report(LocB, NoteWithSuggestionID) <<
                 Clone.B.GetFeature().getRange() << Clone.B.GetSuggestion()
                 << Clone.B.GetSuggestion();
 
           DiagEngine.Report(LocA, NoteID) << Clone.A.GetFeature().getRange();
-      } else {
-          DiagEngine.Report(LocA, WarnID) << Clone.A.GetFeature().getRange();
-          DiagEngine.Report(LocA, NoteID) << Clone.B.GetFeature().getRange();
       }
   }
 }
