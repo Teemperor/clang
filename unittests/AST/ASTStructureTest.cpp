@@ -159,8 +159,8 @@ TEST(ASTStructure, MSDependentExistsStmt) {
 }
 
 TEST(ASTStructure, DeclStmt) {
-  // Check that types don't influence the structure.
-  ASSERT_TRUE(compareStmt("int y = 0;", "long v = 0;"));
+  // Check that types influence the structure.
+  ASSERT_FALSE(compareStmt("int y = 0;", "long v = 0;"));
   // Check that the initialization expression influences the structure.
   ASSERT_FALSE(compareStmt("int y = 0;", "int y = (1 + 1);"));
   // Check that multiple declarations != single declarations
@@ -338,14 +338,7 @@ TEST(ASTStructure, WhileStmt) {
 }
 
 TEST(ASTStructure, NumberLiterals) {
-  // Test that different number literals always
-  // result in the same structure.
-  // Some of the tests have implicit casts in them that also
-  // need to be ignored by ASTStructure to pass the test.
-  ASSERT_TRUE(compareStmt("double x = 1;", "double x = 1l;"));
-  ASSERT_TRUE(compareStmt("double x = 1u;", "double x = 1l;"));
-  ASSERT_TRUE(compareStmt("double x = 1.0;", "long x = 1;"));
-  ASSERT_TRUE(compareStmt("double x = 1.0f;", "double x = 1l;"));
+  ASSERT_TRUE(compareStmt("double x = 1.0;", "double x = 1.0;"));
 }
 
 TEST(ASTStructure, AtomicExpr) {
@@ -395,11 +388,7 @@ TEST(ASTStructure, InitListExpr) {
 TEST(ASTStructure, Casting) {
   ASSERT_TRUE(compareStructure("x", "x",
                                "int x() { return static_cast<unsigned>(1); }",
-                               "int x() { return static_cast<long>(1); }"));
-  // Different cast types don't influence structure.
-  ASSERT_TRUE(compareStructure("x", "x",
-                               "int x() { return static_cast<unsigned>(1); }",
-                               "int x() { return static_cast<long>(1); }"));
+                               "int x() { return static_cast<unsigned>(1); }"));
   // Different kinds of casts influence structure.
   ASSERT_FALSE(compareStructure(
       "x", "x", "int i[2] = {0, 0}; int *x() { return static_cast<int *>(i); }",
@@ -715,38 +704,36 @@ TEST(StmtFeature, Test) {
   assert(CompareResult.MismatchKind == StmtFeature::StmtFeatureKind::VariableName);
   assert(CompareResult.result.Success == false);
   assert(CompareResult.result.Incompatible == false);
-  assert(CompareResult.result.FeatureThis.getNameIndex() == 1);
-  assert(CompareResult.result.FeatureOther.getNameIndex() == 0);
+  ASSERT_EQ(1u, CompareResult.result.MismatchingFeatureIndex);
 }
 
 TEST(FeatureVector, Mismatch) {
   FeatureVector VectorA, VectorB;
 
-  VectorA.add("x", SourceLocation(), SourceLocation());
-  VectorA.add("y", SourceLocation(), SourceLocation());
-  VectorA.add("z", SourceLocation(), SourceLocation());
+  VectorA.add("x", QualType(), SourceLocation(), SourceLocation());
+  VectorA.add("y", QualType(), SourceLocation(), SourceLocation());
+  VectorA.add("z", QualType(), SourceLocation(), SourceLocation());
 
-  VectorB.add("a", SourceLocation(), SourceLocation());
-  VectorB.add("b", SourceLocation(), SourceLocation());
-  VectorB.add("b", SourceLocation(), SourceLocation()); // need to detect this pattern error
+  VectorB.add("a", QualType(), SourceLocation(), SourceLocation());
+  VectorB.add("b", QualType(), SourceLocation(), SourceLocation());
+  VectorB.add("b", QualType(), SourceLocation(), SourceLocation()); // need to detect this pattern error
 
   ASSERT_FALSE(VectorA.compare(VectorB).Success);
   ASSERT_FALSE(VectorA.compare(VectorB).Incompatible);
-  ASSERT_EQ(2u, VectorA.compare(VectorB).FeatureThis.getNameIndex());
-  ASSERT_EQ(1u, VectorA.compare(VectorB).FeatureOther.getNameIndex());
+  ASSERT_EQ(2u, VectorA.compare(VectorB).MismatchingFeatureIndex);
 }
 
 
 TEST(FeatureVector, Match) {
   FeatureVector VectorA, VectorB;
 
-  VectorA.add("x", SourceLocation(), SourceLocation());
-  VectorA.add("y", SourceLocation(), SourceLocation());
-  VectorA.add("z", SourceLocation(), SourceLocation());
+  VectorA.add("x", QualType(), SourceLocation(), SourceLocation());
+  VectorA.add("y", QualType(), SourceLocation(), SourceLocation());
+  VectorA.add("z", QualType(), SourceLocation(), SourceLocation());
 
-  VectorB.add("a", SourceLocation(), SourceLocation());
-  VectorB.add("b", SourceLocation(), SourceLocation());
-  VectorB.add("c", SourceLocation(), SourceLocation());
+  VectorB.add("a", QualType(), SourceLocation(), SourceLocation());
+  VectorB.add("b", QualType(), SourceLocation(), SourceLocation());
+  VectorB.add("c", QualType(), SourceLocation(), SourceLocation());
 
   ASSERT_TRUE(VectorA.compare(VectorB).Success);
   ASSERT_FALSE(VectorA.compare(VectorB).Incompatible);
@@ -756,12 +743,12 @@ TEST(FeatureVector, Match) {
 TEST(FeatureVector, Incompatible) {
   FeatureVector VectorA, VectorB;
 
-  VectorA.add("x", SourceLocation(), SourceLocation());
-  VectorA.add("y", SourceLocation(), SourceLocation());
-  VectorA.add("z", SourceLocation(), SourceLocation());
+  VectorA.add("x", QualType(), SourceLocation(), SourceLocation());
+  VectorA.add("y", QualType(), SourceLocation(), SourceLocation());
+  VectorA.add("z", QualType(), SourceLocation(), SourceLocation());
 
-  VectorB.add("a", SourceLocation(), SourceLocation());
-  VectorB.add("b", SourceLocation(), SourceLocation());
+  VectorB.add("a", QualType(), SourceLocation(), SourceLocation());
+  VectorB.add("b", QualType(), SourceLocation(), SourceLocation());
 
   ASSERT_FALSE(VectorA.compare(VectorB).Success);
   ASSERT_TRUE(VectorA.compare(VectorB).Incompatible);
