@@ -28,7 +28,7 @@
 using namespace clang;
 using namespace ento;
 namespace {
-class CopyPasteChecker: public Checker<check::EndOfTranslationUnit> {
+class CopyPasteChecker : public Checker<check::EndOfTranslationUnit> {
 public:
   void checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
                                  AnalysisManager &Mgr, BugReporter &BR) const;
@@ -79,7 +79,7 @@ void CopyPasteChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
       } else if (Clone.B.HasSuggestion()) {
           DiagEngine.Report(LocB, NoteWithSuggestionID) <<
                 Clone.B.GetFeature().getRange() << Clone.B.GetSuggestion()
-                << Clone.B.GetSuggestion();
+                << Clone.B.GetFeatureName();
 
           DiagEngine.Report(LocA, NoteID) << Clone.A.GetFeature().getRange();
       }
@@ -87,7 +87,7 @@ void CopyPasteChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
 }
 
 //===----------------------------------------------------------------------===//
-// Register BasicCloneChecker
+// Register CopyPasteChecker
 //===----------------------------------------------------------------------===//
 
 void ento::registerCopyPasteChecker(CheckerManager &Mgr) {
