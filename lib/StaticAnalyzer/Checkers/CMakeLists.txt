@@ -22,6 +22,7 @@ add_clang_library(clangStaticAnalyzerCheckers
   CheckerDocumentation.cpp
   ChrootChecker.cpp
   ClangCheckers.cpp
+  CloneReporter.cpp
   CopyPasteChecker.cpp
   DeadStoresChecker.cpp
   DebugCheckers.cpp

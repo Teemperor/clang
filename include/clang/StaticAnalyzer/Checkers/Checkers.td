@@ -662,5 +662,8 @@ def CopyPasteChecker : Checker<"CopyPasteChecker">,
   HelpText<"Detect bugs caused by copy pasting.">,
   DescFile<"CopyPasteChecker.cpp">;
 
+def CloneReporter : Checker<"CloneReporter">,
+  HelpText<"Reports similar pieces of code.">,
+  DescFile<"CloneReporter.cpp">;
 } // end "clone"
 

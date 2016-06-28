@@ -419,7 +419,11 @@ public:
                   StmtFeature::StmtFeatureKind MismatchKind);
   };
 
-  std::vector<CloneMismatch> findCloneErrors(unsigned MinGroupComplexity = 50);
+  typedef std::vector<StmtInfo> CloneGroup;
+
+  std::vector<CloneMismatch> FindCloneErrors(unsigned MinGroupComplexity = 50);
+
+  std::vector<CloneGroup> FindClones(unsigned MinGroupComplexity = 50);
 
 private:
   std::unordered_map<StmtInfo, StmtData> HashedStmts;

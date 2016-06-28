@@ -616,7 +616,7 @@ void SearchForCloneErrors(std::vector<ASTStructure::CloneMismatch>& output,
 }
 }
 
-std::vector<ASTStructure::CloneMismatch> ASTStructure::findCloneErrors(
+std::vector<ASTStructure::CloneMismatch> ASTStructure::FindCloneErrors(
     unsigned MinGroupComplexity) {
   std::vector<ASTStructure::CloneMismatch> Result;
 
@@ -645,6 +645,90 @@ std::vector<ASTStructure::CloneMismatch> ASTStructure::findCloneErrors(
           || OtherMismatch.B.GetFeature().getStartLocation() == Mismatch.A.GetFeature().getStartLocation()) {
         IndexesToRemove.push_back(I);
         break;
+      }
+    }
+  }
+
+  for (auto Iter = IndexesToRemove.rbegin();
+       Iter != IndexesToRemove.rend();
+       ++Iter) {
+    Result.erase(Result.begin() + (*Iter));
+  }
+
+  return Result;
+}
+
+namespace {
+  bool StmtContainsAnyInGroup(StmtInfo& Stmt, ASTStructure::CloneGroup& Group) {
+    for (StmtInfo& GroupStmt : Group) {
+      if (Stmt.contains(GroupStmt))
+        return true;
+    }
+    return false;
+  }
+
+  bool GroupContains(ASTStructure::CloneGroup& Group,
+                     ASTStructure::CloneGroup& OtherGroup) {
+    if (Group.size() < OtherGroup.size())
+      return false;
+
+    for (StmtInfo& Stmt : Group) {
+      if (!StmtContainsAnyInGroup(Stmt, OtherGroup))
+        return false;
+    }
+    return true;
+  }
+}
+
+std::vector<ASTStructure::CloneGroup> ASTStructure::FindClones(unsigned MinGroupComplexity) {
+  std::vector<CloneGroup> Result;
+
+  std::map<unsigned, CloneGroup> GroupsByHash;
+
+  for (auto& Pair : HashedStmts) {
+    if (Pair.second.Complexity > MinGroupComplexity) {
+      GroupsByHash[Pair.second.Hash].push_back(Pair.first);
+    }
+  }
+
+  for (auto& HashGroupPair : GroupsByHash) {
+    if (HashGroupPair.second.size() > 1) {
+      CloneGroup& HashGroup = HashGroupPair.second;
+      std::set<unsigned> HandledIndexes;
+
+      for (unsigned I = 0; I < HashGroup.size(); ++I) {
+        StmtInfo PrototypeStmt = HashGroup[I];
+        HandledIndexes.insert(I);
+
+        if (HandledIndexes.find(I) != HandledIndexes.end()) {
+          CloneGroup PotentialGroup = {PrototypeStmt};
+
+          for (unsigned J = I + 1; J < HashGroup.size(); ++J) {
+            if (HandledIndexes.find(I) != HandledIndexes.end()) {
+              if (HashGroup[J].equal(PrototypeStmt)) {
+                HandledIndexes.insert(J);
+                PotentialGroup.push_back(HashGroup[J]);
+              }
+            }
+          }
+
+          if (PotentialGroup.size() > 1) {
+            Result.push_back(PotentialGroup);
+          }
+        }
+      }
+    }
+  }
+
+  std::set<unsigned> IndexesToRemove;
+
+  for (unsigned I = 0; I < Result.size(); ++I) {
+    for (unsigned J = 0; J < Result.size(); ++J) {
+      if (I != J) {
+        if (GroupContains(Result[J], Result[I])) {
+          IndexesToRemove.insert(I);
+          break;
+        }
       }
     }
   }

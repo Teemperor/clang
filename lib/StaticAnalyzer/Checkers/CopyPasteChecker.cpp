@@ -40,7 +40,7 @@ void CopyPasteChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
                                                   BugReporter &BR) const {
   ASTStructure Structure(TU->getASTContext());
 
-  std::vector<ASTStructure::CloneMismatch> Clones = Structure.findCloneErrors();
+  std::vector<ASTStructure::CloneMismatch> Clones = Structure.FindCloneErrors();
 
   DiagnosticsEngine& DiagEngine = Mgr.getDiagnostic();
 
