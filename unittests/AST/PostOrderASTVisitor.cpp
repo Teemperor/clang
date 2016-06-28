@@ -44,6 +44,11 @@ namespace {
       return true;
     }
 
+    bool VisitVarDecl(VarDecl* D) {
+      VisitedNodes.push_back(D->getNameAsString());
+      return true;
+    }
+
     bool VisitCXXMethodDecl(CXXMethodDecl *D) {
       VisitedNodes.push_back(D->getQualifiedNameAsString());
       return true;
@@ -71,7 +76,7 @@ TEST(RecursiveASTVisitor, PostOrderTraversal) {
   auto ASTUnit = tooling::buildASTFromCode(
     "template <class T> class A {"
     "  class B {"
-    "    int foo() { return 1 + 2; }"
+    "    int foo() { while(4) { int i = 9; } return (1 + 3) + 2; }"
     "  };"
     "};"
   );
@@ -82,7 +87,7 @@ TEST(RecursiveASTVisitor, PostOrderTraversal) {
   Visitor.TraverseTranslationUnitDecl(TU);
 
   std::vector<std::string> expected = {
-    "1", "2", "+", "return", "A::B::foo", "A::B", "A", "A::T"
+    "4", "9", "i", "1", "3", "+", "2", "+", "return", "A::B::foo", "A::B", "A", "A::T"
   };
   // Compare the list of actually visited nodes
   // with the expected list of visited nodes.

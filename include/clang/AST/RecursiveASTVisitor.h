@@ -597,9 +597,6 @@ bool RecursiveASTVisitor<Derived>::TraverseStmt(Stmt *S,
   SmallVector<llvm::PointerIntPair<Stmt *, 1, bool>, 8> LocalQueue;
   LocalQueue.push_back({S, false});
 
-  SmallVector<Stmt *, 16> ReverseLocalQueue;
-  ReverseLocalQueue.push_back(S);
-
   while (!LocalQueue.empty()) {
     auto &CurrSAndVisited = LocalQueue.back();
     Stmt *CurrS = CurrSAndVisited.getPointer();
@@ -607,6 +604,9 @@ bool RecursiveASTVisitor<Derived>::TraverseStmt(Stmt *S,
     if (Visited) {
       LocalQueue.pop_back();
       TRY_TO(dataTraverseStmtPost(CurrS));
+      if (getDerived().shouldTraversePostOrder()) {
+        TRY_TO(PostVisitStmt(CurrS));
+      }
       continue;
     }
 
@@ -616,21 +616,8 @@ bool RecursiveASTVisitor<Derived>::TraverseStmt(Stmt *S,
       TRY_TO(dataTraverseNode(CurrS, &LocalQueue));
       // Process new children in the order they were added.
       std::reverse(LocalQueue.begin() + N, LocalQueue.end());
-
-      if (getDerived().shouldTraversePostOrder()) {
-        for (std::size_t i = N; i < LocalQueue.size(); ++i) {
-          ReverseLocalQueue.push_back(LocalQueue[i].getPointer());
-        }
-      }
     } else {
       LocalQueue.pop_back();
-    }
-  }
-
-  if (getDerived().shouldTraversePostOrder()) {
-    for (auto Iter = ReverseLocalQueue.rbegin();
-         Iter != ReverseLocalQueue.rend(); ++Iter) {
-      TRY_TO(PostVisitStmt(*Iter));
     }
   }
 
