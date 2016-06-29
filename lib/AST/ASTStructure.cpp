@@ -69,11 +69,11 @@ public:
         ++Complexity;
       } else {
         CalcHash(Child);
-        ASTStructure::HashSearchResult Result = SH.findHash(Child);
+        ASTStructure::HashSearchResult Result = SH.findHash(StmtInfo(Child, &Context));
         if (Result.Success) {
           Complexity += Result.Data.Complexity;
         } else {
-          ++Complexity;
+          return Skip();
         }
       }
     }
@@ -88,12 +88,15 @@ public:
 private:
 
   bool shouldSkipStmt(Stmt *S) {
+    if (S->getLocStart().isInvalid() || S->getLocEnd().isInvalid())
+      return true;
     return Context.getSourceManager().IsInAnyMacroBody(S->getLocStart()) ||
            Context.getSourceManager().IsInAnyMacroBody(S->getLocEnd());
   }
 
   // Marks the current Stmt as no to be processed.
-  // Always returns \c true that it can be called
+  // Always returns \c true for convenience purposes when calling it inside
+  // a Visit* method like that: return Skip();
   bool Skip() {
     SkipHash = true;
     return true;
@@ -123,10 +126,10 @@ private:
   // Merges the hash code of the given Stmt into the
   // current hash code. Stmts that weren't hashed before by this visitor
   // are ignored.
-  void CalcHash(Stmt *S) {
-    auto I = SH.findHash(S);
+  void CalcHash(Stmt *S, unsigned Index = 1) {
+    auto I = SH.findHash(StmtInfo(S, &Context));
     if (I.Success) {
-      CalcHash(I.Data.Hash);
+      CalcHash(I.Data.Hash * Index);
     }
   }
 
@@ -146,29 +149,36 @@ private:
 
     if (auto CS = dyn_cast<CompoundStmt>(CurrentStmt)) {
       if (!CS->body_empty()) {
-        for (unsigned Length = 1; Length < CS->size() - 1; ++Length) {
-          for (unsigned Pos = 0; Pos < CS->size() - Length; ++Pos) {
+        for (unsigned Length = 2; Length < CS->size(); ++Length) {
+          for (unsigned Pos = 0; Pos <= CS->size() - Length; ++Pos) {
             unsigned SubHash = 0;
             unsigned Complexity = 0;
+            bool Ignore = false;
 
             for (unsigned I = Pos; I < Pos + Length; ++I) {
-                Stmt *Child = CS->body_begin()[I];
-                ASTStructure::HashSearchResult Result = SH.findHash(Child);
-                if (Result.Success) {
-                  SubHash += I * 27 * Result.Data.Hash;
-                  Complexity += Result.Data.Complexity;
-                } else {
-                  ++Complexity;
-                }
+              Stmt *Child = CS->body_begin()[I];
+              ASTStructure::HashSearchResult Result = SH.findHash(StmtInfo(Child, &Context));
+              if (Result.Success) {
+                SubHash *= 53;
+                SubHash += Result.Data.Hash;
+                Complexity += Result.Data.Complexity;
+              } else {
+                Ignore = true;
+                break;
+              }
             }
-            Complexity += CompoundStmtChildComplexity * Length;
+            if (!Ignore) {
+              Complexity += CompoundStmtChildComplexity * Length;
 
-            SH.add(SubHash, Complexity, CurrentStmt, Pos, Pos + Length);
+              SubHash += CS->getStmtClass();
+
+              SH.add(SubHash, Complexity, CurrentStmt, &Context, Pos, Pos + Length);
+            }
           }
         }
       }
     }
-    SH.add(Hash, Complexity, CurrentStmt);
+    SH.add(Hash, Complexity, CurrentStmt, &Context);
   }
 
   ASTStructure &SH;
@@ -395,6 +405,11 @@ DEF_STMT_VISIT(SubstNonTypeTemplateParmPackExpr, {})
 DEF_STMT_VISIT(DeclStmt, {
   auto numDecls = std::distance(S->decl_begin(), S->decl_end());
   CalcHash(537u + static_cast<unsigned>(numDecls));
+  for (Decl *D : S->decls()) {
+    if (VarDecl* VD = dyn_cast<VarDecl>(D)) {
+      CalcHash(VD->getType());
+    }
+  }
 })
 
 DEF_STMT_VISIT(CompoundAssignOperator, {})
@@ -526,12 +541,12 @@ public:
 
 StmtFeature::StmtFeature(StmtInfo Info) {
   FeatureCollectVisitor Visitor(*this);
-  if (Info.EndIndex == 0) {
-    Visitor.TraverseStmt(Info.S);
-  } else {
+  if (Info.HoldsSequence()) {
     for (unsigned I = Info.StartIndex; I < Info.EndIndex; ++I) {
       Visitor.TraverseStmt(static_cast<CompoundStmt*>(Info.S)->body_begin()[I]);
     }
+  } else {
+    Visitor.TraverseStmt(Info.S);
   }
 }
 
@@ -560,23 +575,24 @@ public:
 
   std::vector<unsigned> Data;
 
+  void CollectData(const StmtInfo& S) {
+    if (S.HoldsSequence()) {
+      Data.push_back(Stmt::StmtClass::CompoundStmtClass);
+      CompoundStmt *CS = static_cast<CompoundStmt *>(S.S);
+      for (unsigned I = S.StartIndex; I < S.EndIndex; ++I) {
+        TraverseStmt(CS->body_begin()[I]);
+      }
+    } else {
+      TraverseStmt(S.S);
+    }
+  }
+
   bool VisitStmt(Stmt *S) {
     Data.push_back(S->getStmtClass());
     return true;
   }
 
 };
-
-bool CheckStmtEquality(Stmt *S1, Stmt *S2) {
-
-  CompareDataVisitor Visitor1;
-  CompareDataVisitor Visitor2;
-
-  Visitor1.TraverseStmt(S1);
-  Visitor2.TraverseStmt(S2);
-
-  return Visitor1.Data == Visitor2.Data;
-}
 
 void SearchForCloneErrors(std::vector<ASTStructure::CloneMismatch>& output,
                           std::vector<StmtInfo>& Group) {
@@ -758,6 +774,8 @@ namespace {
 }
 
 bool StmtInfo::contains(const StmtInfo &other) const {
+  if (Context != other.Context)
+    return false;
   if (S == other.S) {
     if (!HoldsSequence()) {
       return true;
@@ -769,26 +787,29 @@ bool StmtInfo::contains(const StmtInfo &other) const {
       return true;
     }
     return false;
-  } else {
-    return IsChild(S, other.S);
   }
+
+  bool StartIsInBounds =
+      Context->getSourceManager().isBeforeInTranslationUnit(getLocStart(), other.getLocStart())
+      || getLocStart() == other.getLocStart();
+  bool EndIsInBounds =
+      Context->getSourceManager().isBeforeInTranslationUnit(other.getLocEnd(), getLocEnd())
+      || other.getLocEnd() == getLocEnd();
+  return StartIsInBounds && EndIsInBounds;
+
+  /*
+    return IsChild(S, other.S);
+  } */
 }
 
 bool StmtInfo::equal(const StmtInfo &other) {
-  if (EndIndex != other.EndIndex || StartIndex != other.StartIndex)
-    return false;
-  if (EndIndex == 0) {
-    return CheckStmtEquality(S, other.S);
-  } else {
-    CompoundStmt *CS = dyn_cast<CompoundStmt>(S);
-    CompoundStmt *CSOther = dyn_cast<CompoundStmt>(other.S);
-    for (unsigned Index = StartIndex; Index < EndIndex; ++Index) {
-      if (!CheckStmtEquality(CS->body_begin()[Index],
-                             CSOther->body_begin()[Index]))
-        return false;
-    }
-  }
-  return true;
+  CompareDataVisitor VisitorThis;
+  CompareDataVisitor VisitorOther;
+
+  VisitorThis.CollectData(*this);
+  VisitorOther.CollectData(other);
+
+  return VisitorThis.Data == VisitorOther.Data;
 }
 
 void FeatureVector::add(const std::string &FeatureName, QualType FeatureType,

@@ -18,7 +18,7 @@ int read1() {
   while(true) {
     if (mutex1.try_lock()) {
       int result = mutex1_global;
-      mutex1.unlock();
+      mutex1.unlock(); // expected-note{{Suggestion is based on this similar algorithm.}}
       return result;
     } else {
       // busy wait
@@ -47,7 +47,7 @@ int read3() {
   while(true) {
     if (mutex1.try_lock()) {
       int result = mutex1_global;
-      mutex1.unlock(); // expected-note{{Suggestion is based on this similar algorithm.}}
+      mutex1.unlock();
       return result;
     } else {
       // busy wait
