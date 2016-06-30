@@ -24,7 +24,7 @@ namespace {
 class StructuralHashVisitor
     : public RecursiveASTVisitor<StructuralHashVisitor> {
 
-  static const unsigned CompoundStmtChildComplexity = 8;
+  static const unsigned CompoundStmtChildComplexity = 7;
 
 public:
   explicit StructuralHashVisitor(ASTStructure &Hash, ASTContext &Context)
@@ -48,17 +48,19 @@ public:
     // VisitStmt is the first method to be called for a new
     // Stmt, so we save what Stmt we are currently processing
     // for SaveCurrentHash.
-    CurrentStmt = S;
+    CurrentStmt = StmtInfo(S, &Context);
 
     // Reset options and hash values for the current Stmt.
     IgnoreClassHash = false;
     Hash = 0;
-    Complexity = 1;
     SkipHash = false;
     ClassHash = S->getStmtClass();
-
-    if (shouldSkipStmt(S))
-      return Skip();
+    if (CurrentStmt.IsMacro()) {
+      Complexity = 0;
+      CalcHash(17);
+    } else {
+      Complexity = 1;
+    }
 
     // Incorporate the hash values of all child Stmts into the current
     // Hash value.
@@ -73,7 +75,7 @@ public:
         if (Result.Success) {
           Complexity += Result.Data.Complexity;
         } else {
-          return Skip();
+          ++Complexity;
         }
       }
     }
@@ -86,13 +88,6 @@ public:
 #include "clang/AST/StmtNodes.inc"
 
 private:
-
-  bool shouldSkipStmt(Stmt *S) {
-    if (S->getLocStart().isInvalid() || S->getLocEnd().isInvalid())
-      return true;
-    return Context.getSourceManager().IsInAnyMacroBody(S->getLocStart()) ||
-           Context.getSourceManager().IsInAnyMacroBody(S->getLocEnd());
-  }
 
   // Marks the current Stmt as no to be processed.
   // Always returns \c true for convenience purposes when calling it inside
@@ -147,14 +142,15 @@ private:
       Hash += ClassHash;
     }
 
-    if (auto CS = dyn_cast<CompoundStmt>(CurrentStmt)) {
-      if (!CS->body_empty()) {
-        for (unsigned Length = 2; Length < CS->size(); ++Length) {
-          for (unsigned Pos = 0; Pos <= CS->size() - Length; ++Pos) {
-            unsigned SubHash = 0;
-            unsigned Complexity = 0;
-            bool Ignore = false;
+    auto CS = dyn_cast<CompoundStmt>(CurrentStmt.S);
+    if (!CurrentStmt.IsMacro() && CS != nullptr) {
+      for (unsigned Length = 2; Length < CS->size(); ++Length) {
+        for (unsigned Pos = 0; Pos <= CS->size() - Length; ++Pos) {
+          unsigned SubHash = 0;
+          unsigned Complexity = 0;
+          StmtInfo Sequence(CurrentStmt.S, &Context, Pos, Pos + Length);
 
+          if (!Sequence.IsMacro()) {
             for (unsigned I = Pos; I < Pos + Length; ++I) {
               Stmt *Child = CS->body_begin()[I];
               ASTStructure::HashSearchResult Result = SH.findHash(StmtInfo(Child, &Context));
@@ -163,30 +159,23 @@ private:
                 SubHash += Result.Data.Hash;
                 Complexity += Result.Data.Complexity;
               } else {
-                Ignore = true;
-                break;
+                ++Complexity;
               }
             }
-            if (!Ignore) {
-              Complexity += CompoundStmtChildComplexity * Length;
-
-              SubHash += CS->getStmtClass();
-
-              SH.add(SubHash, Complexity, CurrentStmt, &Context, Pos, Pos + Length);
-            }
+            Complexity += CompoundStmtChildComplexity * Length;
+            SubHash += CS->getStmtClass();
+            SH.add(SubHash, Complexity, Sequence);
           }
         }
       }
     }
-    SH.add(Hash, Complexity, CurrentStmt, &Context);
+    SH.add(Hash, Complexity, CurrentStmt);
   }
 
   ASTStructure &SH;
   ASTContext &Context;
 
-  // The current statement that is being hashed at the moment
-  // or 0 if there is no statement currently hashed.
-  Stmt *CurrentStmt = nullptr;
+  StmtInfo CurrentStmt;
 
   // All members specify properties of the hash process for the current
   // Stmt. They are resetted after the Stmt is successfully hased.
@@ -341,7 +330,9 @@ DEF_STMT_VISIT(MSDependentExistsStmt, { CalcHash(S->isIfExists()); })
 DEF_STMT_VISIT(AddrLabelExpr, { CalcHash(S->getLabel()->getName()); })
 DEF_STMT_VISIT(BreakStmt, {})
 DEF_STMT_VISIT(CompoundStmt, {
-                 Complexity += CompoundStmtChildComplexity * S->size();
+                 if (!CurrentStmt.IsMacro()) {
+                   Complexity += CompoundStmtChildComplexity * S->size();
+                 }
                })
 DEF_STMT_VISIT(ContinueStmt, {})
 DEF_STMT_VISIT(DoStmt, {})
@@ -631,7 +622,7 @@ void SearchForCloneErrors(std::vector<ASTStructure::CloneMismatch>& output,
   }
 }
 }
-
+#include <iostream>
 std::vector<ASTStructure::CloneMismatch> ASTStructure::FindCloneErrors(
     unsigned MinGroupComplexity) {
   std::vector<ASTStructure::CloneMismatch> Result;
@@ -639,7 +630,7 @@ std::vector<ASTStructure::CloneMismatch> ASTStructure::FindCloneErrors(
   std::map<unsigned, std::vector<StmtInfo> > GroupsByHash;
 
   for (auto& Pair : HashedStmts) {
-    if (Pair.second.Complexity > MinGroupComplexity) {
+    if (Pair.second.Complexity > MinGroupComplexity && !Pair.first.IsMacro()) {
       GroupsByHash[Pair.second.Hash].push_back(Pair.first);
     }
   }
@@ -702,7 +693,7 @@ std::vector<ASTStructure::CloneGroup> ASTStructure::FindClones(unsigned MinGroup
   std::map<unsigned, CloneGroup> GroupsByHash;
 
   for (auto& Pair : HashedStmts) {
-    if (Pair.second.Complexity > MinGroupComplexity) {
+    if (Pair.second.Complexity > MinGroupComplexity && !Pair.first.IsMacro()) {
       GroupsByHash[Pair.second.Hash].push_back(Pair.first);
     }
   }
@@ -773,18 +764,26 @@ namespace {
   }
 }
 
+StmtInfo::StmtInfo(Stmt *Stmt, ASTContext *Context, unsigned StartIndex, unsigned EndIndex)
+  : S(Stmt), Context(Context), StartIndex(StartIndex), EndIndex(EndIndex) {
+  if (S) {
+    Macro = Context->getSourceManager().IsInAnyMacroBody(getLocStart()) ||
+        Context->getSourceManager().IsInAnyMacroBody(getLocEnd());
+  }
+}
+
 bool StmtInfo::contains(const StmtInfo &other) const {
   if (Context != other.Context)
     return false;
   if (S == other.S) {
-    if (!HoldsSequence()) {
-      return true;
-    }
-    if (!other.HoldsSequence()) {
-      return false;
-    }
-    if (StartIndex <= other.StartIndex && EndIndex >= other.EndIndex) {
-      return true;
+      if (!HoldsSequence()) {
+          return true;
+        }
+      if (!other.HoldsSequence()) {
+          return false;
+        }
+      if (StartIndex <= other.StartIndex && EndIndex >= other.EndIndex) {
+          return true;
     }
     return false;
   }

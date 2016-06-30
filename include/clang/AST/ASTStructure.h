@@ -171,14 +171,17 @@ struct StmtInfo {
   // instance is representing the children inside
   unsigned StartIndex;
   unsigned EndIndex;
+  bool Macro = false;
 
-  StmtInfo(Stmt *Stmt, ASTContext* Context, unsigned StartIndex, unsigned EndIndex)
-    : S(Stmt), Context(Context), StartIndex(StartIndex), EndIndex(EndIndex) {
-  }
+  StmtInfo(Stmt *Stmt, ASTContext* Context, unsigned StartIndex, unsigned EndIndex);
 
   StmtInfo(Stmt *Stmt, ASTContext* Context) : StmtInfo(Stmt, Context, 0, 0) {
   }
   StmtInfo() : StmtInfo(nullptr, nullptr, 0, 0) {
+  }
+
+  bool IsMacro() const {
+    return Macro;
   }
 
   bool HoldsSequence() const {
@@ -196,7 +199,7 @@ struct StmtInfo {
   SourceLocation getLocEnd() const {
     if (HoldsSequence()) {
       auto CS = static_cast<CompoundStmt*>(S);
-      return CS->body_begin()[StartIndex]->getLocEnd();
+      return CS->body_begin()[EndIndex - 1]->getLocEnd();
     }
     return S->getLocEnd();
   }
@@ -342,28 +345,14 @@ public:
     return {I->second, true};
   }
 
-  /// \brief Adds with the given Stmt with the associated structure hash code
-  ///        to the storage of this ASTStructure object.
+  /// \brief Adds a Stmt with the associated structure hash code to the storage
+  ///        of this ASTStructure object.
   ///
-  /// \param Hash the hash code of the given Stmt.
-  /// \param Complexity the Complexity of the given Stmt
-  /// \param S the given Stmt.
-  void add(unsigned Hash, unsigned Complexity, Stmt *S, ASTContext *C) {
-    HashedStmts.insert(std::make_pair(StmtInfo(S, C), StmtData(Hash, Complexity)));
-  }
-
-  /// \brief Adds a sequence of children in the given CompoundStmt
-  ///        with the associated structure hash code to the storage of this
-  ///        ASTStructure object.
-  ///
-  /// \param Hash the hash code of the given Stmt.
-  /// \param Complexity the Complexity of this.
-  /// \param S the given CompoundStmt.
-  /// \param StartIndex the inclusive start index in the children array.
-  /// \param EndIndex the exclusive end index in the children array.
-  void add(unsigned Hash, unsigned Complexity, Stmt *S, ASTContext *C,
-           unsigned StartIndex, unsigned EndIndex) {
-    HashedStmts.insert(std::make_pair(StmtInfo(S, C, StartIndex, EndIndex),
+  /// \param Hash the hash code of the given statement.
+  /// \param Complexity the Complexity of the given statement.
+  /// \param S the given statement.
+  void add(unsigned Hash, unsigned Complexity, StmtInfo S) {
+    HashedStmts.insert(std::make_pair(S,
                                       StmtData(Hash, Complexity)));
   }
 
