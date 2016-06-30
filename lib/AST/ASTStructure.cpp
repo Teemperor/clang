@@ -48,7 +48,7 @@ public:
     // VisitStmt is the first method to be called for a new
     // Stmt, so we save what Stmt we are currently processing
     // for SaveCurrentHash.
-    CurrentStmt = StmtInfo(S, &Context);
+    CurrentStmt = StmtSequence(S, &Context);
 
     // Reset options and hash values for the current Stmt.
     IgnoreClassHash = false;
@@ -71,7 +71,7 @@ public:
         ++Complexity;
       } else {
         CalcHash(Child);
-        ASTStructure::HashSearchResult Result = SH.findHash(StmtInfo(Child, &Context));
+        ASTStructure::HashSearchResult Result = SH.findHash(StmtSequence(Child, &Context));
         if (Result.Success) {
           Complexity += Result.Data.Complexity;
         } else {
@@ -122,7 +122,7 @@ private:
   // current hash code. Stmts that weren't hashed before by this visitor
   // are ignored.
   void CalcHash(Stmt *S, unsigned Index = 1) {
-    auto I = SH.findHash(StmtInfo(S, &Context));
+    auto I = SH.findHash(StmtSequence(S, &Context));
     if (I.Success) {
       CalcHash(I.Data.Hash * Index);
     }
@@ -142,18 +142,18 @@ private:
       Hash += ClassHash;
     }
 
-    auto CS = dyn_cast<CompoundStmt>(CurrentStmt.S);
+    auto CS = dyn_cast<CompoundStmt>(CurrentStmt.GetStmt());
     if (!CurrentStmt.IsMacro() && CS != nullptr) {
       for (unsigned Length = 2; Length < CS->size(); ++Length) {
         for (unsigned Pos = 0; Pos <= CS->size() - Length; ++Pos) {
           unsigned SubHash = 0;
           unsigned Complexity = 0;
-          StmtInfo Sequence(CurrentStmt.S, &Context, Pos, Pos + Length);
+          StmtSequence Sequence(CurrentStmt.GetStmt(), &Context, Pos, Pos + Length);
 
           if (!Sequence.IsMacro()) {
             for (unsigned I = Pos; I < Pos + Length; ++I) {
               Stmt *Child = CS->body_begin()[I];
-              ASTStructure::HashSearchResult Result = SH.findHash(StmtInfo(Child, &Context));
+              ASTStructure::HashSearchResult Result = SH.findHash(StmtSequence(Child, &Context));
               if (Result.Success) {
                 SubHash *= 53;
                 SubHash += Result.Data.Hash;
@@ -175,7 +175,7 @@ private:
   ASTStructure &SH;
   ASTContext &Context;
 
-  StmtInfo CurrentStmt;
+  StmtSequence CurrentStmt;
 
   // All members specify properties of the hash process for the current
   // Stmt. They are resetted after the Stmt is successfully hased.
@@ -530,14 +530,14 @@ public:
 };
 }
 
-StmtFeature::StmtFeature(StmtInfo Info) {
+StmtFeature::StmtFeature(StmtSequence Info) {
   FeatureCollectVisitor Visitor(*this);
   if (Info.HoldsSequence()) {
-    for (unsigned I = Info.StartIndex; I < Info.EndIndex; ++I) {
-      Visitor.TraverseStmt(static_cast<CompoundStmt*>(Info.S)->body_begin()[I]);
+    for (unsigned I = Info.GetStartIndex(); I < Info.GetEndIndex(); ++I) {
+      Visitor.TraverseStmt(static_cast<CompoundStmt*>(Info.GetStmt())->body_begin()[I]);
     }
   } else {
-    Visitor.TraverseStmt(Info.S);
+    Visitor.TraverseStmt(Info.GetStmt());
   }
 }
 
@@ -566,15 +566,15 @@ public:
 
   std::vector<unsigned> Data;
 
-  void CollectData(const StmtInfo& S) {
+  void CollectData(const StmtSequence& S) {
     if (S.HoldsSequence()) {
       Data.push_back(Stmt::StmtClass::CompoundStmtClass);
-      CompoundStmt *CS = static_cast<CompoundStmt *>(S.S);
-      for (unsigned I = S.StartIndex; I < S.EndIndex; ++I) {
+      CompoundStmt *CS = static_cast<CompoundStmt *>(S.GetStmt());
+      for (unsigned I = S.GetStartIndex(); I < S.GetEndIndex(); ++I) {
         TraverseStmt(CS->body_begin()[I]);
       }
     } else {
-      TraverseStmt(S.S);
+      TraverseStmt(S.GetStmt());
     }
   }
 
@@ -586,11 +586,11 @@ public:
 };
 
 void SearchForCloneErrors(std::vector<ASTStructure::CloneMismatch>& output,
-                          std::vector<StmtInfo>& Group) {
+                          std::vector<StmtSequence>& Group) {
   for (std::size_t I1 = 0; I1 < Group.size(); ++I1) {
     for (std::size_t I2 = I1 + 1; I2 < Group.size(); ++I2) {
-      StmtInfo CurrentStmt = Group[I1];
-      StmtInfo OtherStmt = Group[I2];
+      StmtSequence CurrentStmt = Group[I1];
+      StmtSequence OtherStmt = Group[I2];
 
       if (CurrentStmt.equal(OtherStmt)) {
         StmtFeature CurrentFeature(CurrentStmt);
@@ -627,7 +627,7 @@ std::vector<ASTStructure::CloneMismatch> ASTStructure::FindCloneErrors(
     unsigned MinGroupComplexity) {
   std::vector<ASTStructure::CloneMismatch> Result;
 
-  std::map<unsigned, std::vector<StmtInfo> > GroupsByHash;
+  std::map<unsigned, std::vector<StmtSequence> > GroupsByHash;
 
   for (auto& Pair : HashedStmts) {
     if (Pair.second.Complexity > MinGroupComplexity && !Pair.first.IsMacro()) {
@@ -666,8 +666,8 @@ std::vector<ASTStructure::CloneMismatch> ASTStructure::FindCloneErrors(
 }
 
 namespace {
-  bool StmtContainsAnyInGroup(StmtInfo& Stmt, ASTStructure::CloneGroup& Group) {
-    for (StmtInfo& GroupStmt : Group) {
+  bool StmtContainsAnyInGroup(StmtSequence& Stmt, ASTStructure::CloneGroup& Group) {
+    for (StmtSequence& GroupStmt : Group) {
       if (Stmt.contains(GroupStmt))
         return true;
     }
@@ -679,7 +679,7 @@ namespace {
     if (Group.size() < OtherGroup.size())
       return false;
 
-    for (StmtInfo& Stmt : Group) {
+    for (StmtSequence& Stmt : Group) {
       if (!StmtContainsAnyInGroup(Stmt, OtherGroup))
         return false;
     }
@@ -704,7 +704,7 @@ std::vector<ASTStructure::CloneGroup> ASTStructure::FindClones(unsigned MinGroup
       std::set<unsigned> HandledIndexes;
 
       for (unsigned I = 0; I < HashGroup.size(); ++I) {
-        StmtInfo PrototypeStmt = HashGroup[I];
+        StmtSequence PrototypeStmt = HashGroup[I];
         HandledIndexes.insert(I);
 
         if (HandledIndexes.find(I) != HandledIndexes.end()) {
@@ -764,7 +764,7 @@ namespace {
   }
 }
 
-StmtInfo::StmtInfo(Stmt *Stmt, ASTContext *Context, unsigned StartIndex, unsigned EndIndex)
+StmtSequence::StmtSequence(Stmt *Stmt, ASTContext *Context, unsigned StartIndex, unsigned EndIndex)
   : S(Stmt), Context(Context), StartIndex(StartIndex), EndIndex(EndIndex) {
   if (S) {
     Macro = Context->getSourceManager().IsInAnyMacroBody(getLocStart()) ||
@@ -772,7 +772,7 @@ StmtInfo::StmtInfo(Stmt *Stmt, ASTContext *Context, unsigned StartIndex, unsigne
   }
 }
 
-bool StmtInfo::contains(const StmtInfo &other) const {
+bool StmtSequence::contains(const StmtSequence &other) const {
   if (Context != other.Context)
     return false;
   if (S == other.S) {
@@ -801,7 +801,7 @@ bool StmtInfo::contains(const StmtInfo &other) const {
   } */
 }
 
-bool StmtInfo::equal(const StmtInfo &other) {
+bool StmtSequence::equal(const StmtSequence &other) {
   CompareDataVisitor VisitorThis;
   CompareDataVisitor VisitorOther;
 

@@ -164,20 +164,36 @@ public:
 /// \brief Stores a piece of (executable) code. It can either hold
 /// a single Stmt or a sequence of statements inside a CompoundStmt.
 ///
-struct StmtInfo {
+class StmtSequence {
   Stmt *S;
   ASTContext* Context;
-  // If EndIndex is non-zero, then S is a CompoundStmt and this StmtInfo
-  // instance is representing the children inside
+  // If EndIndex is non-zero, then S is a CompoundStmt and this StmtSequence
+  // instance is representing the children inside the array [Start, End);
   unsigned StartIndex;
   unsigned EndIndex;
   bool Macro = false;
+public:
+  StmtSequence(Stmt *Stmt, ASTContext* Context, unsigned StartIndex, unsigned EndIndex);
 
-  StmtInfo(Stmt *Stmt, ASTContext* Context, unsigned StartIndex, unsigned EndIndex);
-
-  StmtInfo(Stmt *Stmt, ASTContext* Context) : StmtInfo(Stmt, Context, 0, 0) {
+  StmtSequence(Stmt *Stmt, ASTContext* Context) : StmtSequence(Stmt, Context, 0, 0) {
   }
-  StmtInfo() : StmtInfo(nullptr, nullptr, 0, 0) {
+  StmtSequence() : StmtSequence(nullptr, nullptr, 0, 0) {
+  }
+
+  Stmt* GetStmt() const {
+    return S;
+  }
+
+  ASTContext& GetASTContext() {
+    return *Context;
+  }
+
+  unsigned GetStartIndex() const {
+    return StartIndex;
+  }
+
+  unsigned GetEndIndex() const {
+    return EndIndex;
   }
 
   bool IsMacro() const {
@@ -204,28 +220,28 @@ struct StmtInfo {
     return S->getLocEnd();
   }
 
-  bool operator==(const StmtInfo& other) const {
+  bool operator==(const StmtSequence& other) const {
     return S == other.S &&
         StartIndex == other.StartIndex &&
         EndIndex == other.EndIndex;
   }
 
-  bool contains(const StmtInfo& other) const;
+  bool contains(const StmtSequence& other) const;
 
-  bool equal(const StmtInfo& other);
+  bool equal(const StmtSequence& other);
 };
 
 }
 
 namespace std {
   template <>
-  struct hash<clang::StmtInfo>
+  struct hash<clang::StmtSequence>
   {
-    size_t operator()(const clang::StmtInfo &Info) const
+    size_t operator()(const clang::StmtSequence &Info) const
     {
-      return ((std::hash<clang::Stmt *>()(Info.S)
-               ^ (std::hash<unsigned>()(Info.StartIndex) << 1)) >> 1)
-               ^ (std::hash<unsigned>()(Info.EndIndex) << 1);
+      return ((std::hash<clang::Stmt *>()(Info.GetStmt())
+               ^ (std::hash<unsigned>()(Info.GetStartIndex()) << 1)) >> 1)
+               ^ (std::hash<unsigned>()(Info.GetEndIndex()) << 1);
     }
   };
 }
@@ -241,7 +257,7 @@ public:
     END
   };
 
-  StmtFeature(StmtInfo S);
+  StmtFeature(StmtSequence S);
 
   void add(const std::string& Name, SourceLocation StartLoc,
            SourceLocation EndLoc, StmtFeatureKind Kind,
@@ -337,7 +353,7 @@ public:
   /// The structure hash code is a integer describing the structure
   /// of the given Stmt. Stmts with an equal structure hash code probably
   /// have the same structure.
-  HashSearchResult findHash(StmtInfo S) {
+  HashSearchResult findHash(StmtSequence S) {
     auto I = HashedStmts.find(S);
     if (I == HashedStmts.end()) {
       return {StmtData(), false};
@@ -351,18 +367,18 @@ public:
   /// \param Hash the hash code of the given statement.
   /// \param Complexity the Complexity of the given statement.
   /// \param S the given statement.
-  void add(unsigned Hash, unsigned Complexity, StmtInfo S) {
+  void add(unsigned Hash, unsigned Complexity, StmtSequence S) {
     HashedStmts.insert(std::make_pair(S,
                                       StmtData(Hash, Complexity)));
   }
 
   class CloneMismatchPart {
-    StmtInfo Stmt;
+    StmtSequence Stmt;
     FeatureVector Features;
     std::string SuggestedFeature;
     unsigned MismatchIndex;
   public:
-    CloneMismatchPart(StmtInfo Stmt, FeatureVector Features,
+    CloneMismatchPart(StmtSequence Stmt, FeatureVector Features,
                       unsigned MismatchIndex)
       : Stmt(Stmt), Features(Features), MismatchIndex(MismatchIndex) {
     }
@@ -373,7 +389,7 @@ public:
       SuggestedFeature = Feature;
     }
 
-    StmtInfo GetStmt() const {
+    StmtSequence GetStmt() const {
       return Stmt;
     }
 
@@ -412,14 +428,14 @@ public:
                   StmtFeature::StmtFeatureKind MismatchKind);
   };
 
-  typedef std::vector<StmtInfo> CloneGroup;
+  typedef std::vector<StmtSequence> CloneGroup;
 
   std::vector<CloneMismatch> FindCloneErrors(unsigned MinGroupComplexity = 50);
 
   std::vector<CloneGroup> FindClones(unsigned MinGroupComplexity = 50);
 
 private:
-  std::unordered_map<StmtInfo, StmtData> HashedStmts;
+  std::unordered_map<StmtSequence, StmtData> HashedStmts;
 
 };
 
