@@ -281,6 +281,10 @@ public:
     }
   };
 
+  FeatureVector& GetFeatureVector(StmtFeatureKind Kind) {
+    return Features[Kind];
+  }
+
   unsigned differentFeatureVectors(const StmtFeature& other);
 
   CompareResult compare(const StmtFeature& other) {

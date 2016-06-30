@@ -25,13 +25,46 @@
 #include "clang/Lex/Lexer.h"
 #include "clang/AST/ASTStructure.h"
 
+#include <regex>
+
 using namespace clang;
 using namespace ento;
+
 namespace {
 class CloneReporter : public Checker<check::EndOfTranslationUnit> {
+
+  // A regex that at least one function name used inside a clone
+  // has to match to be reported.
+  // TODO: Bind this option to an user-accessible option-flag.
+  std::regex FunctionFilter = std::regex("[\\s\\S]*");
+
 public:
   void checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
                                  AnalysisManager &Mgr, BugReporter &BR) const;
+
+  bool ShouldReport(StmtSequence& Stmt) const {
+    StmtFeature Features(Stmt);
+    auto FeatureVector = Features.GetFeatureVector(StmtFeature::FunctionName);
+    for (unsigned I = 0; I < FeatureVector.GetNumberOfNames(); ++I) {
+      if (std::regex_match(FeatureVector.GetName(I), FunctionFilter)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool ShouldReportGroup(ASTStructure::CloneGroup& Group) const {
+    unsigned Matches = 0;
+    for (StmtSequence& StmtSeq : Group) {
+      if (ShouldReport(StmtSeq)) {
+        Matches++;
+        if (Matches >= 2) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
 };
 } // end anonymous namespace
 
@@ -53,9 +86,11 @@ void CloneReporter::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
                                  "Related code clone is here.");
 
   for (ASTStructure::CloneGroup& Group : CloneGroups) {
-    DiagEngine.Report(Group.front().getLocStart(), WarnID);
-    for (unsigned J = 1; J < Group.size(); ++J) {
-      DiagEngine.Report(Group[J].getLocStart(), NoteID);
+    if (ShouldReportGroup(Group)) {
+      DiagEngine.Report(Group.front().getLocStart(), WarnID);
+      for (unsigned J = 1; J < Group.size(); ++J) {
+        DiagEngine.Report(Group[J].getLocStart(), NoteID);
+      }
     }
   }
 }
