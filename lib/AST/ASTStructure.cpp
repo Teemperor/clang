@@ -24,7 +24,7 @@ namespace {
 class StructuralHashVisitor
     : public RecursiveASTVisitor<StructuralHashVisitor> {
 
-  static const unsigned CompoundStmtChildComplexity = 7;
+  static const unsigned CompoundStmtChildComplexity = 3;
 
 public:
   explicit StructuralHashVisitor(ASTStructure &Hash, ASTContext &Context)
@@ -815,6 +815,7 @@ void FeatureVector::add(const std::string &FeatureName, QualType FeatureType,
                         SourceLocation StartLocation, SourceLocation EndLocation) {
   for (std::size_t I = 0; I < FeatureNames.size(); ++I) {
     if (FeatureNames[I] == FeatureName) {
+      ++FeatureOccurences[I];
       Occurences.push_back(Feature(I, StartLocation, EndLocation));
       return;
     }
@@ -823,6 +824,50 @@ void FeatureVector::add(const std::string &FeatureName, QualType FeatureType,
                               StartLocation, EndLocation));
   FeatureNames.push_back(FeatureName);
   FeatureTypes.push_back(FeatureType);
+  FeatureOccurences.push_back(1);
+}
+
+FeatureVector::ComparisonResult FeatureVector::compare(const FeatureVector &other) {
+  ComparisonResult result;
+  unsigned FirstErrorIndex;
+  unsigned TotalErrorNumber = 0;
+  if (Occurences.size() != other.Occurences.size()) {
+    result.Incompatible = true;
+    result.Success = false;
+    return result;
+  }
+  if (GetNumberOfNames() == other.GetNumberOfNames()) {
+    bool FoundOccurenceDifference = false;
+    for (unsigned I = 0; I < FeatureOccurences.size(); ++I) {
+      if (FeatureOccurences[I] != other.FeatureOccurences[I]) {
+        FoundOccurenceDifference = true;
+      }
+    }
+    if (!FoundOccurenceDifference) {
+      result.Success = true;
+      result.Incompatible = false;
+      return result;
+    }
+  }
+  for (unsigned I = 0; I < Occurences.size(); ++I) {
+    if (Occurences[I].getNameIndex() != other.Occurences[I].getNameIndex()) {
+      if (TotalErrorNumber == 0) {
+          FirstErrorIndex = I;
+        }
+      ++TotalErrorNumber;
+    }
+  }
+  if (TotalErrorNumber != 0) {
+    result.Success = false;
+    result.Incompatible = false;
+    result.MismatchingFeatureIndex = FirstErrorIndex;
+    result.TotalErrorNumber = TotalErrorNumber;
+    return result;
+  }
+
+  result.Success = true;
+  result.Incompatible = false;
+  return result;
 }
 
 ASTStructure::CloneMismatch::CloneMismatch(

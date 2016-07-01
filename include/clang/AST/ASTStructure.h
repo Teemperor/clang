@@ -72,6 +72,7 @@ class FeatureVector {
   std::vector<Feature> Occurences;
   std::vector<std::string> FeatureNames;
   std::vector<QualType> FeatureTypes;
+  std::vector<unsigned> FeatureOccurences;
 
 public:
 
@@ -128,35 +129,7 @@ public:
 
   };
 
-  ComparisonResult compare(const FeatureVector& other) {
-    ComparisonResult result;
-    unsigned FirstErrorIndex;
-    unsigned TotalErrorNumber = 0;
-    if (Occurences.size() != other.Occurences.size()) {
-      result.Incompatible = true;
-      result.Success = false;
-      return result;
-    }
-    for (unsigned I = 0; I < Occurences.size(); ++I) {
-      if (Occurences[I].getNameIndex() != other.Occurences[I].getNameIndex()) {
-        if (TotalErrorNumber == 0) {
-          FirstErrorIndex = I;
-        }
-        ++TotalErrorNumber;
-      }
-    }
-    if (TotalErrorNumber != 0) {
-      result.Success = false;
-      result.Incompatible = false;
-      result.MismatchingFeatureIndex = FirstErrorIndex;
-      result.TotalErrorNumber = TotalErrorNumber;
-      return result;
-    }
-
-    result.Success = true;
-    result.Incompatible = false;
-    return result;
-  }
+  ComparisonResult compare(const FeatureVector& other);
 
 };
 
@@ -434,9 +407,9 @@ public:
 
   typedef std::vector<StmtSequence> CloneGroup;
 
-  std::vector<CloneMismatch> FindCloneErrors(unsigned MinGroupComplexity = 50);
+  std::vector<CloneMismatch> FindCloneErrors(unsigned MinGroupComplexity = 30);
 
-  std::vector<CloneGroup> FindClones(unsigned MinGroupComplexity = 50);
+  std::vector<CloneGroup> FindClones(unsigned MinGroupComplexity = 30);
 
 private:
   std::unordered_map<StmtSequence, StmtData> HashedStmts;
