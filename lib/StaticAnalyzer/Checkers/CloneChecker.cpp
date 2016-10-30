@@ -37,12 +37,13 @@ public:
 
   /// \brief Reports all clones to the user.
   void reportClones(SourceManager &SM, AnalysisManager &Mgr,
-                    int MinComplexity) const;
+                    const std::vector<CloneDetector::CloneGroup> &Clones) const;
 
   /// \brief Reports only suspicious clones to the user along with informaton
   ///        that explain why they are suspicious.
-  void reportSuspiciousClones(SourceManager &SM, AnalysisManager &Mgr,
-                              int MinComplexity) const;
+  void reportSuspiciousClones(
+      SourceManager &SM, AnalysisManager &Mgr,
+      const std::vector<CloneDetector::CloneGroup> &Clones) const;
 };
 } // end anonymous namespace
 
@@ -59,6 +60,8 @@ void CloneChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
   // At this point, every statement in the translation unit has been analyzed by
   // the CloneDetector. The only thing left to do is to report the found clones.
 
+  SourceManager &SM = BR.getSourceManager();
+
   int MinComplexity = Mgr.getAnalyzerOptions().getOptionAsInteger(
       "MinimumCloneComplexity", 10, this);
   assert(MinComplexity >= 0);
@@ -69,18 +72,35 @@ void CloneChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
   bool ReportNormalClones = Mgr.getAnalyzerOptions().getBooleanOption(
       "ReportNormalClones", true, this);
 
-  if (ReportSuspiciousClones)
-    reportSuspiciousClones(BR.getSourceManager(), Mgr, MinComplexity);
+  // Let the CloneDetector create a list of clones from all the analyzed
+  // statements. We don't filter for matching variable patterns at this point
+  // because reportSuspiciousClones() wants to search them for errors.
+  std::vector<CloneDetector::CloneGroup> AllCloneGroups;
 
-  if (ReportNormalClones)
-    reportClones(BR.getSourceManager(), Mgr, MinComplexity);
+  Detector.findClones(AllCloneGroups, HashConstraint(),
+                      MinComplexityConstraint(MinComplexity),
+                      MinGroupSizeConstraint(2), OnlyLargestCloneConstraint());
+
+  if (ReportSuspiciousClones)
+    reportSuspiciousClones(SM, Mgr, AllCloneGroups);
+
+  // We are done for this translation unit unless we also need to report normal
+  // clones.
+  if (!ReportNormalClones)
+    return;
+
+  // Now that the suspicious clone detector has checked for pattern errors,
+  // we also filter all clones who don't have matching patterns
+
+  Detector.constrainClones(AllCloneGroups, MatchingVariablePatternConstraint(),
+                           MinGroupSizeConstraint(2));
+
+  reportClones(SM, Mgr, AllCloneGroups);
 }
 
-void CloneChecker::reportClones(SourceManager &SM, AnalysisManager &Mgr,
-                                int MinComplexity) const {
-
-  std::vector<CloneDetector::CloneGroup> CloneGroups;
-  Detector.findClones(CloneGroups, MinComplexity);
+void CloneChecker::reportClones(
+    SourceManager &SM, AnalysisManager &Mgr,
+    const std::vector<CloneDetector::CloneGroup> &Clones) const {
 
   DiagnosticsEngine &DiagEngine = Mgr.getDiagnostic();
 
@@ -90,22 +110,45 @@ void CloneChecker::reportClones(SourceManager &SM, AnalysisManager &Mgr,
   unsigned NoteID = DiagEngine.getCustomDiagID(DiagnosticsEngine::Note,
                                                "Related code clone is here.");
 
-  for (CloneDetector::CloneGroup &Group : CloneGroups) {
+  for (const CloneDetector::CloneGroup &Group : Clones) {
     // We group the clones by printing the first as a warning and all others
     // as a note.
-    DiagEngine.Report(Group.Sequences.front().getStartLoc(), WarnID);
-    for (unsigned i = 1; i < Group.Sequences.size(); ++i) {
-      DiagEngine.Report(Group.Sequences[i].getStartLoc(), NoteID);
+    DiagEngine.Report(Group.front().getStartLoc(), WarnID);
+    for (unsigned i = 1; i < Group.size(); ++i) {
+      DiagEngine.Report(Group[i].getStartLoc(), NoteID);
     }
   }
 }
 
-void CloneChecker::reportSuspiciousClones(SourceManager &SM,
-                                          AnalysisManager &Mgr,
-                                          int MinComplexity) const {
+void CloneChecker::reportSuspiciousClones(
+    SourceManager &SM, AnalysisManager &Mgr,
+    const std::vector<CloneDetector::CloneGroup> &Clones) const {
 
-  std::vector<CloneDetector::SuspiciousClonePair> Clones;
-  Detector.findSuspiciousClones(Clones, MinComplexity);
+  std::vector<VariablePattern::SuspiciousClonePair> Pairs;
+
+  for (const CloneDetector::CloneGroup &Group : Clones) {
+    for (unsigned i = 0; i < Group.size(); ++i) {
+      VariablePattern PatternA(Group[i]);
+
+      for (unsigned j = i + 1; j < Group.size(); ++j) {
+        VariablePattern PatternB(Group[j]);
+
+        VariablePattern::SuspiciousClonePair ClonePair;
+        // For now, we only report clones which break the variable pattern just
+        // once because multiple differences in a pattern are an indicator that
+        // those differences are maybe intended (e.g. because it's actually a
+        // different algorithm).
+        // TODO: In very big clones even multiple variables can be unintended,
+        // so replacing this number with a percentage could better handle such
+        // cases. On the other hand it could increase the false-positive rate
+        // for all clones if the percentage is too high.
+        if (PatternA.getPatternDifferences(PatternB, &ClonePair) == 1) {
+          Pairs.push_back(ClonePair);
+          break;
+        }
+      }
+    }
+  }
 
   DiagnosticsEngine &DiagEngine = Mgr.getDiagnostic();
 
@@ -122,7 +165,7 @@ void CloneChecker::reportSuspiciousClones(SourceManager &SM,
                                "variable in a similar piece of code; did you "
                                "mean to use %0?");
 
-  for (CloneDetector::SuspiciousClonePair &Pair : Clones) {
+  for (VariablePattern::SuspiciousClonePair &Pair : Pairs) {
     // The first clone always has a suggestion and we report it to the user
     // along with the place where the suggestion should be used.
     DiagEngine.Report(Pair.FirstCloneInfo.VarRange.getBegin(),
