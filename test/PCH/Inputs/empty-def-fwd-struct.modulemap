@@ -1,0 +1,2 @@
+module M { header "../empty-def-fwd-struct.h" }
+
