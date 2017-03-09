@@ -977,7 +977,7 @@ private:
   /// "Interesting" declarations are those that have data that may
   /// need to be emitted, such as inline function definitions or
   /// Objective-C protocols.
-  std::deque<Decl *> InterestingDecls;
+  std::deque<std::pair<Decl *, bool> > InterestingDecls;
 
   /// \brief The list of redeclaration chains that still need to be 
   /// reconstructed, and the local offset to the corresponding list

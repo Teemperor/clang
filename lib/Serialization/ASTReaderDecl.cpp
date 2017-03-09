@@ -3605,10 +3605,36 @@ Decl *ASTReader::ReadDeclRecord(DeclID ID) {
   // AST consumer might need to know about, queue it.
   // We don't pass it to the consumer immediately because we may be in recursive
   // loading, and some declarations may still be initializing.
-  if (isConsumerInterestedIn(Context, D, Reader.hasPendingBody()))
-    InterestingDecls.push_back(D);
+  // TODO if (isConsumerInterestedIn(Context, D, Reader.hasPendingBody()))
+  InterestingDecls.push_back(std::make_pair(D, Reader.hasPendingBody()));
 
   return D;
+}
+
+void ASTReader::PassInterestingDeclsToConsumer() {
+  assert(Consumer);
+
+  if (PassingDeclsToConsumer)
+    return;
+
+  // Guard variable to avoid recursively redoing the process of passing
+  // decls to consumer.
+  SaveAndRestore<bool> GuardPassingDeclsToConsumer(PassingDeclsToConsumer,
+                                                   true);
+
+  // Ensure that we've loaded all potentially-interesting declarations
+  // that need to be eagerly loaded.
+  for (auto ID : EagerlyDeserializedDecls)
+    GetDecl(ID);
+  EagerlyDeserializedDecls.clear();
+
+  while (!InterestingDecls.empty()) {
+    auto pair = InterestingDecls.front();
+    Decl *D = pair.first;
+    InterestingDecls.pop_front();
+    if (isConsumerInterestedIn(Context, D, pair.second))
+        PassInterestingDeclToConsumer(D);
+  }
 }
 
 void ASTReader::loadDeclUpdateRecords(serialization::DeclID ID, Decl *D) {
@@ -3642,7 +3668,7 @@ void ASTReader::loadDeclUpdateRecords(serialization::DeclID ID, Decl *D) {
       // we need to hand it off to the consumer.
       if (!WasInteresting &&
           isConsumerInterestedIn(Context, D, Reader.hasPendingBody())) {
-        InterestingDecls.push_back(D);
+        InterestingDecls.push_back(std::make_pair(D, Reader.hasPendingBody()));
         WasInteresting = true;
       }
     }
