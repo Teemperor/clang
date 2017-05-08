@@ -417,6 +417,16 @@ public:
 };
 
 void ODRHash::AddType(const Type *T) {
+  // Hash the name of the typedef. To ensure that we actually
+  // are token-equal. TODO: Really needed?
+  if (auto TT = dyn_cast<TypedefType>(T)) {
+    ID.AddString(TT->getDecl()->getQualifiedNameAsString());
+  }
+  // Desugar potentially nested typedefs before hashing.
+  while (auto TT = dyn_cast<TypedefType>(T)) {
+    T = TT->desugar().getTypePtr();
+  }
+
   assert(T && "Expecting non-null pointer.");
   auto Result = TypeMap.insert(std::make_pair(T, TypeMap.size()));
   ID.AddInteger(Result.first->second);
