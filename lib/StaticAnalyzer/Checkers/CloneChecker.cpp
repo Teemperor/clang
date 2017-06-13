@@ -78,9 +78,10 @@ void CloneChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
   // because reportSuspiciousClones() wants to search them for errors.
   std::vector<CloneDetector::CloneGroup> AllCloneGroups;
 
-  Detector.findClones(AllCloneGroups, RecursiveCloneTypeIIConstraint(),
-                      MinComplexityConstraint(MinComplexity),
-                      MinGroupSizeConstraint(2), OnlyLargestCloneConstraint());
+  Detector.findClones(
+      AllCloneGroups, RecursiveCloneTypeIIHashConstraint(),
+      MinGroupSizeConstraint(2), MinComplexityConstraint(MinComplexity),
+      RecursiveCloneTypeIIVerifyConstraint(), OnlyLargestCloneConstraint());
 
   if (ReportSuspiciousClones)
     reportSuspiciousClones(BR, Mgr, AllCloneGroups);
