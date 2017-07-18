@@ -2219,8 +2219,8 @@ void Sema::DiagnoseOwningPropertyGetterSynthesis(const ObjCImplementationDecl *D
         Preprocessor &PP = getPreprocessor();
         TokenValue tokens[] = {
           tok::kw___attribute, tok::l_paren, tok::l_paren,
-          PP.getIdentifierInfo("objc_method_family"), tok::l_paren,
-          PP.getIdentifierInfo("none"), tok::r_paren,
+          PP.getIdentifierInfo("objc_method_family", false), tok::l_paren,
+          PP.getIdentifierInfo("none", false), tok::r_paren,
           tok::r_paren, tok::r_paren
         };
         StringRef spelling = "__attribute__((objc_method_family(none)))";

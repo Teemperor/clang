@@ -1864,7 +1864,7 @@ void Preprocessor::HandleIncludeDirective(SourceLocation HashLoc,
     // extra lookup step?
     SmallVector<std::pair<IdentifierInfo *, SourceLocation>, 2> Path;
     for (Module *Mod = SuggestedModule.getModule(); Mod; Mod = Mod->Parent)
-      Path.push_back(std::make_pair(getIdentifierInfo(Mod->Name),
+      Path.push_back(std::make_pair(getIdentifierInfo(Mod->Name, false),
                                     FilenameTok.getLocation()));
     std::reverse(Path.begin(), Path.end());
 

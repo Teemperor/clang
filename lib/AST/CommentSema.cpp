@@ -692,7 +692,7 @@ void Sema::checkDeprecatedCommand(const BlockCommandComment *Command) {
     if (PP) {
       TokenValue Tokens[] = {
         tok::kw___attribute, tok::l_paren, tok::l_paren,
-        PP->getIdentifierInfo("deprecated"),
+        PP->getIdentifierInfo("deprecated", false),
         tok::r_paren, tok::r_paren
       };
       StringRef MacroName = PP->getLastMacroWithSpelling(FD->getLocation(),

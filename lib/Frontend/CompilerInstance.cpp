@@ -1312,7 +1312,7 @@ static bool compileAndLoadModule(CompilerInstance &ImportingInstance,
 /// configuration macro and the definition provided on the command line.
 static void checkConfigMacro(Preprocessor &PP, StringRef ConfigMacro,
                              Module *Mod, SourceLocation ImportLoc) {
-  IdentifierInfo *Id = PP.getIdentifierInfo(ConfigMacro);
+  IdentifierInfo *Id = PP.getIdentifierInfo(ConfigMacro, false);
   SourceManager &SourceMgr = PP.getSourceManager();
   
   // If this identifier has never had a macro definition, then it could
@@ -1518,7 +1518,7 @@ bool CompilerInstance::loadModuleFile(StringRef FileName) {
 
     void ReadModuleName(StringRef ModuleName) override {
       LoadedModules.push_back(
-          CI.getPreprocessor().getIdentifierInfo(ModuleName));
+          CI.getPreprocessor().getIdentifierInfo(ModuleName, false));
     }
 
     void registerAll() {
@@ -2005,7 +2005,7 @@ GlobalModuleIndex *CompilerInstance::loadGlobalModuleIndex(
       if (!Entry) {
         SmallVector<std::pair<IdentifierInfo *, SourceLocation>, 2> Path;
         Path.push_back(std::make_pair(
-            getPreprocessor().getIdentifierInfo(TheModule->Name), TriggerLoc));
+            getPreprocessor().getIdentifierInfo(TheModule->Name, false), TriggerLoc));
         std::reverse(Path.begin(), Path.end());
         // Load a module as hidden.  This also adds it to the global index.
         loadModule(TheModule->DefinitionLoc, Path, Module::Hidden, false);

@@ -1266,13 +1266,13 @@ static StringRef getFallthroughAttrSpelling(Preprocessor &PP,
                                             SourceLocation Loc) {
   TokenValue FallthroughTokens[] = {
     tok::l_square, tok::l_square,
-    PP.getIdentifierInfo("fallthrough"),
+    PP.getIdentifierInfo("fallthrough", false),
     tok::r_square, tok::r_square
   };
 
   TokenValue ClangFallthroughTokens[] = {
-    tok::l_square, tok::l_square, PP.getIdentifierInfo("clang"),
-    tok::coloncolon, PP.getIdentifierInfo("fallthrough"),
+    tok::l_square, tok::l_square, PP.getIdentifierInfo("clang", false),
+    tok::coloncolon, PP.getIdentifierInfo("fallthrough", false),
     tok::r_square, tok::r_square
   };
 

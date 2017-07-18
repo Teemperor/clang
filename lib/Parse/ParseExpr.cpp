@@ -843,7 +843,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
         if (RevertibleTypeTraits.empty()) {
 #define RTT_JOIN(X,Y) X##Y
 #define REVERTIBLE_TYPE_TRAIT(Name)                         \
-          RevertibleTypeTraits[PP.getIdentifierInfo(#Name)] \
+          RevertibleTypeTraits[PP.getIdentifierInfo(#Name, false)] \
             = RTT_JOIN(tok::kw_,Name)
 
           REVERTIBLE_TYPE_TRAIT(__is_abstract);

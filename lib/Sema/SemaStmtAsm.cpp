@@ -800,7 +800,7 @@ StmtResult Sema::ActOnMSAsmStmt(SourceLocation AsmLoc, SourceLocation LBraceLoc,
 LabelDecl *Sema::GetOrCreateMSAsmLabel(StringRef ExternalLabelName,
                                        SourceLocation Location,
                                        bool AlwaysCreate) {
-  LabelDecl* Label = LookupOrCreateLabel(PP.getIdentifierInfo(ExternalLabelName),
+  LabelDecl* Label = LookupOrCreateLabel(PP.getIdentifierInfo(ExternalLabelName, false),
                                          Location);
 
   if (Label->isMSAsmLabel()) {

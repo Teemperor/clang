@@ -42,7 +42,7 @@ public:
 IdentifierInfo *Parser::getSEHExceptKeyword() {
   // __except is accepted as a (contextual) keyword 
   if (!Ident__except && (getLangOpts().MicrosoftExt || getLangOpts().Borland))
-    Ident__except = PP.getIdentifierInfo("__except");
+    Ident__except = PP.getIdentifierInfo("__except", false);
 
   return Ident__except;
 }
@@ -491,15 +491,15 @@ void Parser::Initialize() {
   Ident_AbnormalTermination = nullptr;
 
   if(getLangOpts().Borland) {
-    Ident__exception_info        = PP.getIdentifierInfo("_exception_info");
-    Ident___exception_info       = PP.getIdentifierInfo("__exception_info");
-    Ident_GetExceptionInfo       = PP.getIdentifierInfo("GetExceptionInformation");
-    Ident__exception_code        = PP.getIdentifierInfo("_exception_code");
-    Ident___exception_code       = PP.getIdentifierInfo("__exception_code");
-    Ident_GetExceptionCode       = PP.getIdentifierInfo("GetExceptionCode");
-    Ident__abnormal_termination  = PP.getIdentifierInfo("_abnormal_termination");
-    Ident___abnormal_termination = PP.getIdentifierInfo("__abnormal_termination");
-    Ident_AbnormalTermination    = PP.getIdentifierInfo("AbnormalTermination");
+    Ident__exception_info        = PP.getIdentifierInfo("_exception_info", false);
+    Ident___exception_info       = PP.getIdentifierInfo("__exception_info", false);
+    Ident_GetExceptionInfo       = PP.getIdentifierInfo("GetExceptionInformation", false);
+    Ident__exception_code        = PP.getIdentifierInfo("_exception_code", false);
+    Ident___exception_code       = PP.getIdentifierInfo("__exception_code", false);
+    Ident_GetExceptionCode       = PP.getIdentifierInfo("GetExceptionCode", false);
+    Ident__abnormal_termination  = PP.getIdentifierInfo("_abnormal_termination", false);
+    Ident___abnormal_termination = PP.getIdentifierInfo("__abnormal_termination", false);
+    Ident_AbnormalTermination    = PP.getIdentifierInfo("AbnormalTermination", false);
 
     PP.SetPoisonReason(Ident__exception_code,diag::err_seh___except_block);
     PP.SetPoisonReason(Ident___exception_code,diag::err_seh___except_block);

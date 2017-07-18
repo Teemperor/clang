@@ -25,7 +25,7 @@ using namespace sema;
 
 static LookupResult lookupMember(Sema &S, const char *Name, CXXRecordDecl *RD,
                                  SourceLocation Loc, bool &Res) {
-  DeclarationName DN = S.PP.getIdentifierInfo(Name);
+  DeclarationName DN = S.PP.getIdentifierInfo(Name, false);
   LookupResult LR(S, DN, Loc, Sema::LookupMemberName);
   // Suppress diagnostics when a private member is selected. The same warnings
   // will be produced again when building the call.
@@ -915,7 +915,7 @@ bool CoroutineStmtBuilder::makeReturnOnAllocFailure() {
   // is obtained by a call to ... get_return_object_on_allocation_failure().
 
   DeclarationName DN =
-      S.PP.getIdentifierInfo("get_return_object_on_allocation_failure");
+      S.PP.getIdentifierInfo("get_return_object_on_allocation_failure", false);
   LookupResult Found(S, DN, Loc, Sema::LookupMemberName);
   if (!S.LookupQualifiedName(Found, PromiseRecordDecl))
     return true;

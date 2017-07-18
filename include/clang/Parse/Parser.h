@@ -692,7 +692,7 @@ private:
     if (Tok.isAnnotation())
       return false;
     if (!Ident_instancetype)
-      Ident_instancetype = PP.getIdentifierInfo("instancetype");
+      Ident_instancetype = PP.getIdentifierInfo("instancetype", false);
     return Tok.getIdentifierInfo() == Ident_instancetype;
   }
 

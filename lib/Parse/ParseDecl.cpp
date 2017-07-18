@@ -914,11 +914,11 @@ void Parser::ParseAvailabilityAttribute(IdentifierInfo &Availability,
   IdentifierLoc *Platform = ParseIdentifierLoc();
   // Canonicalize platform name from "macosx" to "macos".
   if (Platform->Ident && Platform->Ident->getName() == "macosx")
-    Platform->Ident = PP.getIdentifierInfo("macos");
+    Platform->Ident = PP.getIdentifierInfo("macos", false);
   // Canonicalize platform name from "macosx_app_extension" to
   // "macos_app_extension".
   if (Platform->Ident && Platform->Ident->getName() == "macosx_app_extension")
-    Platform->Ident = PP.getIdentifierInfo("macos_app_extension");
+    Platform->Ident = PP.getIdentifierInfo("macos_app_extension", false);
 
   // Parse the ',' following the platform name.
   if (ExpectAndConsume(tok::comma)) {
@@ -929,13 +929,13 @@ void Parser::ParseAvailabilityAttribute(IdentifierInfo &Availability,
   // If we haven't grabbed the pointers for the identifiers
   // "introduced", "deprecated", and "obsoleted", do so now.
   if (!Ident_introduced) {
-    Ident_introduced = PP.getIdentifierInfo("introduced");
-    Ident_deprecated = PP.getIdentifierInfo("deprecated");
-    Ident_obsoleted = PP.getIdentifierInfo("obsoleted");
-    Ident_unavailable = PP.getIdentifierInfo("unavailable");
-    Ident_message = PP.getIdentifierInfo("message");
-    Ident_strict = PP.getIdentifierInfo("strict");
-    Ident_replacement = PP.getIdentifierInfo("replacement");
+    Ident_introduced = PP.getIdentifierInfo("introduced", false);
+    Ident_deprecated = PP.getIdentifierInfo("deprecated", false);
+    Ident_obsoleted = PP.getIdentifierInfo("obsoleted", false);
+    Ident_unavailable = PP.getIdentifierInfo("unavailable", false);
+    Ident_message = PP.getIdentifierInfo("message", false);
+    Ident_strict = PP.getIdentifierInfo("strict", false);
+    Ident_replacement = PP.getIdentifierInfo("replacement", false);
   }
 
   // Parse the optional "strict", the optional "replacement" and the set of
@@ -1113,9 +1113,9 @@ void Parser::ParseExternalSourceSymbolAttribute(
 
   // Initialize the pointers for the keyword identifiers when required.
   if (!Ident_language) {
-    Ident_language = PP.getIdentifierInfo("language");
-    Ident_defined_in = PP.getIdentifierInfo("defined_in");
-    Ident_generated_declaration = PP.getIdentifierInfo("generated_declaration");
+    Ident_language = PP.getIdentifierInfo("language", false);
+    Ident_defined_in = PP.getIdentifierInfo("defined_in", false);
+    Ident_generated_declaration = PP.getIdentifierInfo("generated_declaration", false);
   }
 
   ExprResult Language;

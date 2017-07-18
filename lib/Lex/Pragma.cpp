@@ -767,7 +767,7 @@ static bool LexModuleNameComponent(
     if (Literal.hadError)
       return true;
     ModuleNameComponent = std::make_pair(
-        PP.getIdentifierInfo(Literal.GetString()), Tok.getLocation());
+        PP.getIdentifierInfo(Literal.GetString(), false), Tok.getLocation());
   } else if (!Tok.isAnnotation() && Tok.getIdentifierInfo()) {
     ModuleNameComponent =
         std::make_pair(Tok.getIdentifierInfo(), Tok.getLocation());

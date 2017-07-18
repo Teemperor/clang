@@ -3206,17 +3206,17 @@ IdentifierInfo *Sema::getNullabilityKeyword(NullabilityKind nullability) {
   switch (nullability) {
   case NullabilityKind::NonNull:
     if (!Ident__Nonnull)
-      Ident__Nonnull = PP.getIdentifierInfo("_Nonnull");
+      Ident__Nonnull = PP.getIdentifierInfo("_Nonnull", false);
     return Ident__Nonnull;
 
   case NullabilityKind::Nullable:
     if (!Ident__Nullable)
-      Ident__Nullable = PP.getIdentifierInfo("_Nullable");
+      Ident__Nullable = PP.getIdentifierInfo("_Nullable", false);
     return Ident__Nullable;
 
   case NullabilityKind::Unspecified:
     if (!Ident__Null_unspecified)
-      Ident__Null_unspecified = PP.getIdentifierInfo("_Null_unspecified");
+      Ident__Null_unspecified = PP.getIdentifierInfo("_Null_unspecified", false);
     return Ident__Null_unspecified;
   }
   llvm_unreachable("Unknown nullability kind.");
@@ -3225,7 +3225,7 @@ IdentifierInfo *Sema::getNullabilityKeyword(NullabilityKind nullability) {
 /// Retrieve the identifier "NSError".
 IdentifierInfo *Sema::getNSErrorIdent() {
   if (!Ident_NSError)
-    Ident_NSError = PP.getIdentifierInfo("NSError");
+    Ident_NSError = PP.getIdentifierInfo("NSError", false);
 
   return Ident_NSError;
 }

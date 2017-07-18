@@ -119,7 +119,7 @@ public:
       if (!DestContext)
         DestContext = Context.getTranslationUnitDecl();
       IdentifierInfo *ToIdent =
-          CurrentSema->getPreprocessor().getIdentifierInfo(CorrectTo);
+          CurrentSema->getPreprocessor().getIdentifierInfo(CorrectTo, false);
       NamespaceDecl *NewNamespace =
           NamespaceDecl::Create(Context, DestContext, false, Typo.getBeginLoc(),
                                 Typo.getLoc(), ToIdent, nullptr);
@@ -161,7 +161,7 @@ public:
       if (!DestContext)
         DestContext = Context.getTranslationUnitDecl();
       IdentifierInfo *ToIdent =
-          CurrentSema->getPreprocessor().getIdentifierInfo(CorrectTo);
+          CurrentSema->getPreprocessor().getIdentifierInfo(CorrectTo, false);
       auto *NewFunction = FunctionDecl::Create(
           Context, DestContext, SourceLocation(), SourceLocation(), ToIdent,
           Context.getFunctionType(Context.VoidTy, {}, {}), nullptr, SC_Static);

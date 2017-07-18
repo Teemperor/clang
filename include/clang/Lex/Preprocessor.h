@@ -971,8 +971,20 @@ public:
 
   /// Return information about the specified preprocessor
   /// identifier token.
-  IdentifierInfo *getIdentifierInfo(StringRef Name) const {
-    return &Identifiers.get(Name);
+  IdentifierInfo *getIdentifierInfo(StringRef Name,
+                                    bool CheckOutOfDate = true) const {
+    IdentifierInfo *II = &Identifiers.get(Name);
+    if (CheckOutOfDate && II->isOutOfDate()) {
+      bool CurrentIsPoisoned = false;
+      if (II == Ident__VA_ARGS__)
+        CurrentIsPoisoned = Ident__VA_ARGS__->isPoisoned();
+
+      updateOutOfDateIdentifier(*II);
+
+      if (II == Ident__VA_ARGS__)
+        II->setIsPoisoned(CurrentIsPoisoned);
+    }
+    return II;
   }
 
   /// \brief Add the specified pragma handler to this preprocessor.

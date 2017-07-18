@@ -963,7 +963,7 @@ ExprResult Sema::DefaultVariadicArgumentPromotion(Expr *E, VariadicCallType CT,
     CXXScopeSpec SS;
     SourceLocation TemplateKWLoc;
     UnqualifiedId Name;
-    Name.setIdentifier(PP.getIdentifierInfo("__builtin_trap"),
+    Name.setIdentifier(PP.getIdentifierInfo("__builtin_trap", false),
                        E->getLocStart());
     ExprResult TrapFn = ActOnIdExpression(TUScope, SS, TemplateKWLoc,
                                           Name, true, false);

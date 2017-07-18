@@ -1828,7 +1828,7 @@ static void DiagnoseCallingConvCast(Sema &Self, const ExprResult &SrcExpr,
   if (Self.getLangOpts().MicrosoftExt) {
     // __stdcall or __vectorcall
     OS << "__" << DstCCName;
-    IdentifierInfo *II = PP.getIdentifierInfo(OS.str());
+    IdentifierInfo *II = PP.getIdentifierInfo(OS.str(), false);
     AttrTokens.push_back(II->isKeyword(Self.getLangOpts())
                              ? TokenValue(II->getTokenID())
                              : TokenValue(II));
@@ -1838,7 +1838,7 @@ static void DiagnoseCallingConvCast(Sema &Self, const ExprResult &SrcExpr,
     AttrTokens.push_back(tok::kw___attribute);
     AttrTokens.push_back(tok::l_paren);
     AttrTokens.push_back(tok::l_paren);
-    IdentifierInfo *II = PP.getIdentifierInfo(DstCCName);
+    IdentifierInfo *II = PP.getIdentifierInfo(DstCCName, false);
     AttrTokens.push_back(II->isKeyword(Self.getLangOpts())
                              ? TokenValue(II->getTokenID())
                              : TokenValue(II));

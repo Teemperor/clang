@@ -324,7 +324,7 @@ void Preprocessor::dumpMacroInfo(const IdentifierInfo *II) {
 /// table and mark it as a builtin macro to be expanded.
 static IdentifierInfo *RegisterBuiltinMacro(Preprocessor &PP, const char *Name){
   // Get the identifier.
-  IdentifierInfo *Id = PP.getIdentifierInfo(Name);
+  IdentifierInfo *Id = PP.getIdentifierInfo(Name, false);
 
   // Mark it as being a macro that is builtin.
   MacroInfo *MI = PP.AllocateMacroInfo(SourceLocation());
@@ -1856,7 +1856,7 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
   } else if (II == Ident__MODULE__) {
     // The current module as an identifier.
     OS << getLangOpts().CurrentModule;
-    IdentifierInfo *ModuleII = getIdentifierInfo(getLangOpts().CurrentModule);
+    IdentifierInfo *ModuleII = getIdentifierInfo(getLangOpts().CurrentModule, false);
     Tok.setIdentifierInfo(ModuleII);
     Tok.setKind(ModuleII->getTokenID());
   } else if (II == Ident__identifier) {
