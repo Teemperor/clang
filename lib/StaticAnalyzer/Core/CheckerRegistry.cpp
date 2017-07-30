@@ -10,9 +10,10 @@
 #include "clang/StaticAnalyzer/Core/CheckerRegistry.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
-#include "clang/StaticAnalyzer/Core/CheckerOptInfo.h"
 #include "clang/StaticAnalyzer/Core/AnalyzerOptions.h"
+#include "clang/StaticAnalyzer/Core/CheckerOptInfo.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace clang;
@@ -94,8 +95,46 @@ void CheckerRegistry::addChecker(InitializationFunction fn, StringRef name,
   }
 }
 
-void CheckerRegistry::initializeManager(CheckerManager &checkerMgr,
-                                  SmallVectorImpl<CheckerOptInfo> &opts) const {
+void CheckerRegistry::addConfig(llvm::StringRef fullName) {
+  Configs[fullName] = {fullName};
+}
+
+bool CheckerRegistry::hasConfig(llvm::StringRef fullName) const {
+  // Let's first see if we can directly find the config value in our map, this
+  // handles all global configs and all configs that are directly specified
+  // to the packages/checkers they belong to.
+  // Examples are 'core.MemoryChecker:MemoryVal' if the MemoryChecker is
+  // declared to have the MemoryVal config.
+  if (Configs.count(fullName) == 1)
+    return true;
+
+  // Direct lookup failed, but we still have to check all parent packages below.
+
+  size_t pos = fullName.find(':');
+  if (pos == StringRef::npos || pos == fullName.size() - 1) {
+    // At this point we either have a marformed config key (like 'foo:') or
+    // we would have been handled in the lookup above, so we can fail now.
+    return false;
+  }
+  // Split the key into checkerName (or package name) and the configName.
+  StringRef checkerName = fullName.substr(0, pos);
+  StringRef configName = fullName.substr(pos + 1);
+
+  SmallVector<StringRef, 8> parts;
+  checkerName.split(parts, '.');
+  // Iterate over all parent packages and check if they have such a config.
+  for (size_t i = 1; i <= parts.size(); ++i) {
+    std::string newConfig = llvm::join(parts.begin(), parts.begin() + i, ".");
+    if (Configs.count(newConfig + ":" + configName.str()) == 1)
+      return true;
+  }
+  // No parent package had such a config, so we can assume the option doesn't
+  // exist in this registry.
+  return false;
+}
+
+void CheckerRegistry::initializeManager(
+    CheckerManager &checkerMgr, SmallVectorImpl<CheckerOptInfo> &opts) const {
   // Sort checkers for efficient collection.
   std::sort(Checkers.begin(), Checkers.end(), checkerNameLT);
 
@@ -118,8 +157,13 @@ void CheckerRegistry::validateCheckerOptions(const AnalyzerOptions &opts,
                                              DiagnosticsEngine &diags) const {
   for (auto &config : opts.Config) {
     size_t pos = config.getKey().find(':');
-    if (pos == StringRef::npos)
+    if (pos == StringRef::npos) {
+      // It's a global config, so no checker configuration required, but we
+      // still need to verify if the config is valid.
+      if (!hasConfig(config.getKey()))
+        diags.Report(diag::err_unknown_analyzer_config) << config.getKey();
       continue;
+    }
 
     bool hasChecker = false;
     StringRef checkerName = config.getKey().substr(0, pos);
@@ -130,7 +174,12 @@ void CheckerRegistry::validateCheckerOptions(const AnalyzerOptions &opts,
         break;
       }
     }
-    if (!hasChecker) {
+    if (hasChecker) {
+      // We have such a checker, but we still need to verify if the checker
+      // actually has the given config value.
+      if (!hasConfig(config.getKey()))
+        diags.Report(diag::err_unknown_analyzer_config) << config.getKey();
+    } else {
       diags.Report(diag::err_unknown_analyzer_checker) << checkerName;
     }
   }

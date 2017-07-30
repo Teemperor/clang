@@ -10,6 +10,9 @@
 #ifndef LLVM_CLANG_STATICANALYZER_CHECKERS_CLANGCHECKERS_H
 #define LLVM_CLANG_STATICANALYZER_CHECKERS_CLANGCHECKERS_H
 
+#include <string>
+#include <vector>
+
 namespace clang {
 namespace ento {
 class CheckerRegistry;

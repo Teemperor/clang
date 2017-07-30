@@ -91,6 +91,15 @@ public:
     : Initialize(fn), FullName(name), Desc(desc) {}
   };
 
+  /// A config value.
+  struct Config {
+    StringRef FullName;
+    // TODO: Supports descriptions, default value etc. here.
+  };
+
+  /// All configs known to this registry mapped by their full name.
+  llvm::StringMap<Config> Configs;
+
   typedef std::vector<CheckerInfo> CheckerInfoList;
 
 private:
@@ -114,6 +123,24 @@ public:
     addChecker(&CheckerRegistry::initializeManager<T>, fullName, desc);
   }
 
+  /// Adds a config to the registry that the user can use to modify the behavior
+  /// of certain checkers.
+  /// \param fullName The full name of the new config in the same format as the
+  ///                 '-analyzer-config' flag of clang expects. For example
+  ///                 'core.pkg:Setting' or 'core.alpha.TestChecker:TestConfig'.
+  void addConfig(StringRef fullName);
+
+  /// Checks if the given full name of the config is known to this registry.
+  ///
+  /// Also checks all parent packages for a config with the given name. The
+  /// config 'TestConfig' in 'core.alpha.TestChecker:TestConfig' would be
+  /// searched in 'core', 'core.alpha' and 'core.alpha.TestChecker'.
+  ///
+  /// \param fullName The full name of the new config in the same format as the
+  ///                 '-analyzer-config' flag of clang expects. For example
+  ///                 'core.pkg:Setting' or 'core.alpha.TestChecker:TestConfig'.
+  bool hasConfig(StringRef fullName) const;
+
   /// Initializes a CheckerManager by calling the initialization functions for
   /// all checkers specified by the given CheckerOptInfo list. The order of this
   /// list is significant; later options can be used to reverse earlier ones.
@@ -121,7 +148,8 @@ public:
   void initializeManager(CheckerManager &mgr,
                          SmallVectorImpl<CheckerOptInfo> &opts) const;
 
-  /// Check if every option corresponds to a specific checker or package.
+  /// Check if every option corresponds to a specific checker or package and was
+  /// previously added to this registry.
   void validateCheckerOptions(const AnalyzerOptions &opts,
                               DiagnosticsEngine &diags) const;
 

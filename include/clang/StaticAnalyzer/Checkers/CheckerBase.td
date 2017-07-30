@@ -16,11 +16,18 @@ class CheckerGroup<string name> {
 }
 class InGroup<CheckerGroup G> { CheckerGroup Group = G; }
 
+class Config<string name> {
+  string       ConfigName = name;
+}
+
+class GlobalConfig<string name> : Config<name> {}
+
 class Package<string name> {
   string       PackageName = name;
   bit          Hidden = 0;
   Package ParentPackage;
   CheckerGroup Group;
+  list<Config> Configs = [];
 }
 class InPackage<Package P> { Package ParentPackage = P; }
 
@@ -32,8 +39,10 @@ class Checker<string name = ""> {
   bit         Hidden = 0;
   Package ParentPackage;
   CheckerGroup Group;
+  list<Config> Configs = [];
 }
 
 class DescFile<string filename> { string DescFile = filename; }
 class HelpText<string text> { string HelpText = text; }
 class Hidden { bit Hidden = 1; }
+class HasConfigs<list<Config> C> { list<Config> Configs = C; }

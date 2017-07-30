@@ -29,4 +29,19 @@ void ento::registerBuiltinCheckers(CheckerRegistry &registry) {
   registry.addChecker(register##CLASS, FULLNAME, HELPTEXT);
 #include "clang/StaticAnalyzer/Checkers/Checkers.inc"
 #undef GET_CHECKERS
+
+#define GET_GLOBAL_CONFIGS
+#define GLOBAL_CONFIG(NAME) registry.addConfig(NAME);
+#include "clang/StaticAnalyzer/Checkers/Checkers.inc"
+#undef GET_GLOBAL_CONFIGS
+
+#define GET_CHECKER_CONFIGS
+#define CHECKER_CONFIG(CHECKER, NAME) registry.addConfig(CHECKER ":" NAME);
+#include "clang/StaticAnalyzer/Checkers/Checkers.inc"
+#undef GET_CHECKER_CONFIGS
+
+#define GET_PACKAGE_CONFIGS
+#define PACKAGE_CONFIG(PACKAGE, NAME) registry.addConfig(PACKAGE ":" NAME);
+#include "clang/StaticAnalyzer/Checkers/Checkers.inc"
+#undef GET_PACKAGE_CONFIGS
 }

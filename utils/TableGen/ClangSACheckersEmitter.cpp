@@ -248,6 +248,60 @@ void EmitClangSACheckers(RecordKeeper &Records, raw_ostream &OS) {
   }
   OS << "#endif // GET_CHECKERS\n\n";
 
+  OS << "\n#ifdef GET_CHECKER_CONFIGS\n";
+  for (unsigned i = 0, e = checkers.size(); i != e; ++i) {
+    const Record &R = *checkers[i];
+    const std::vector<Record *> Configs = R.getValueAsListOfDefs("Configs");
+    for (Record *Config : Configs) {
+      OS << "CHECKER_CONFIG("
+         << "\"";
+      std::string name;
+      if (isCheckerNamed(&R))
+        name = getCheckerFullName(&R);
+      OS.write_escaped(name);
+      OS << "\", \"";
+      OS.write_escaped(Config->getValueAsString("ConfigName"));
+      OS << "\")\n";
+    }
+  }
+  OS << "#endif // GET_CHECKER_CONFIGS\n\n";
+
+  OS << "\n#ifdef GET_PACKAGE_CONFIGS\n";
+  {
+    SortedRecords sortedPackages;
+    for (unsigned i = 0, e = packages.size(); i != e; ++i)
+      sortedPackages[getPackageFullName(packages[i])] = packages[i];
+
+    for (SortedRecords::iterator I = sortedPackages.begin(),
+                                 E = sortedPackages.end();
+         I != E; ++I) {
+      const Record &R = *I->second;
+
+      const std::vector<Record *> Configs = R.getValueAsListOfDefs("Configs");
+      for (Record *Config : Configs) {
+        OS << "PACKAGE_CONFIG("
+           << "\"";
+        OS.write_escaped(getPackageFullName(&R));
+        OS << "\", \"";
+        OS.write_escaped(Config->getValueAsString("ConfigName"));
+        OS << "\")\n";
+      }
+    }
+  }
+  OS << "#endif // GET_PACKAGE_CONFIGS\n\n";
+
+  OS << "\n#ifdef GET_GLOBAL_CONFIGS\n";
+  std::vector<Record *> globalConfigs =
+      Records.getAllDerivedDefinitions("GlobalConfig");
+  for (unsigned i = 0, e = globalConfigs.size(); i != e; ++i) {
+    Record *R = globalConfigs[i];
+    OS << "GLOBAL_CONFIG("
+       << "\"";
+    OS.write_escaped(R->getValueAsString("ConfigName"));
+    OS << "\")\n";
+  }
+  OS << "#endif // GET_GLOBAL_CONFIGS\n\n";
+
   unsigned index = 0;
   for (std::map<std::string, GroupInfo>::iterator
          I = groupInfoByName.begin(), E = groupInfoByName.end(); I != E; ++I)

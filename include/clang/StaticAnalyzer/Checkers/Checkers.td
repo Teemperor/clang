@@ -13,6 +13,11 @@ include "clang/StaticAnalyzer/Checkers/CheckerBase.td"
 // Packages.
 //===----------------------------------------------------------------------===//
 
+// Package configs
+
+def OptimisticConfig : Config<"Optimistic">;
+def NoDiagnoseCallsToSystemHeadersConfig : Config<"NoDiagnoseCallsToSystemHeaders">;
+
 // The Alpha package is for checkers that have too many false positives to be
 // turned on by default. The hierarchy under Alpha should be organized in the
 // hierarchy checkers would have had if they were truly at the top level.
@@ -43,7 +48,8 @@ def OptIn : Package<"optin">;
 // development, but unwanted for developers who target only a single platform.
 def PortabilityOptIn : Package<"portability">, InPackage<OptIn>;
 
-def Nullability : Package<"nullability">;
+def Nullability : Package<"nullability">,
+                  HasConfigs<[NoDiagnoseCallsToSystemHeadersConfig]>;
 
 def Cplusplus : Package<"cplusplus">;
 def CplusplusAlpha : Package<"cplusplus">, InPackage<Alpha>, Hidden;
@@ -61,7 +67,7 @@ def InsecureAPI : Package<"insecureAPI">, InPackage<Security>;
 def SecurityAlpha : Package<"security">, InPackage<Alpha>, Hidden;
 def Taint : Package<"taint">, InPackage<SecurityAlpha>, Hidden;
 
-def Unix : Package<"unix">;
+def Unix : Package<"unix">, HasConfigs<[OptimisticConfig]>;
 def UnixAlpha : Package<"unix">, InPackage<Alpha>, Hidden;
 def CString : Package<"cstring">, InPackage<Unix>, Hidden;
 def CStringAlpha : Package<"cstring">, InPackage<UnixAlpha>, Hidden;
@@ -93,6 +99,44 @@ def GoogleAPIModeling : Package<"google">, InPackage<APIModeling>;
 def Debug : Package<"debug">;
 
 def CloneDetectionAlpha : Package<"clone">, InPackage<Alpha>, Hidden;
+
+//===----------------------------------------------------------------------===//
+// Global configs.
+//===----------------------------------------------------------------------===//
+
+def AllConfig                              : GlobalConfig<"*">;
+def AvoidSuppressingNullArgumentPaths      : GlobalConfig<"avoid-suppressing-null-argument-paths">;
+def CxxAllocatorInliningConfig             : GlobalConfig<"c++-allocator-inlining">;
+def CxxcontainerInliningConfig             : GlobalConfig<"c++-container-inlining">;
+def CfgConditionalStaticInitializersConfig : GlobalConfig<"cfg-conditional-static-initializers">;
+def CfgImplicitDtorsConfig                 : GlobalConfig<"cfg-implicit-dtors">;
+def CfgLifetimeConfig                      : GlobalConfig<"cfg-lifetime">;
+def CfgTemporaryDtorsConfig                : GlobalConfig<"cfg-temporary-dtors">;
+def CxxinliningConfig                      : GlobalConfig<"c++-inlining">;
+def CxxstdlibInliningConfig                : GlobalConfig<"c++-stdlib-inlining">;
+def CxxtemplateInliningConfig              : GlobalConfig<"c++-template-inlining">;
+def FauxBodiesConfig                       : GlobalConfig<"faux-bodies">;
+def GraphTrimIntervalConfig                : GlobalConfig<"graph-trim-interval">;
+def InlineLambdasConfig                    : GlobalConfig<"inline-lambdas">;
+def IpaConfig                              : GlobalConfig<"ipa">;
+def IpaAlwaysInlineSizeConfig              : GlobalConfig<"ipa-always-inline-size">;
+def LeakDiagnosticsReferenceAllocConfig    : GlobalConfig<"leak-diagnostics-reference-allocation">;
+def MaxNodesConfig                         : GlobalConfig<"max-nodes">;
+def MaxInlinableSize                       : GlobalConfig<"max-inlinable-size">;
+def MaxTimesInlineLarge                    : GlobalConfig<"max-times-inline-large">;
+def ModeConfig                             : GlobalConfig<"mode">;
+def ModelPathConfig                        : GlobalConfig<"model-path">;
+def NotesSsEventsConfig                    : GlobalConfig<"notes-as-events">;
+def ObjcInliningConfig                     : GlobalConfig<"objc-inlining">;
+def PathDiagnosticsAlternateConfig         : GlobalConfig<"path-diagnostics-alternate">;
+def PrunePathsConfig                       : GlobalConfig<"prune-paths">;
+def RegionStoreSmallStructLimitConfig      : GlobalConfig<"region-store-small-struct-limit">;
+def ReportInMainSourceFileConfig           : GlobalConfig<"report-in-main-source-file">;
+def SuppressCxxStdlibConfig                : GlobalConfig<"suppress-c++-stdlib">;
+def SuppressInlinedDefensiveChecksConfig   : GlobalConfig<"suppress-inlined-defensive-checks">;
+def SuppressNullReturnPathsConfig          : GlobalConfig<"suppress-null-return-paths">;
+def UnrollLoopsConfig                      : GlobalConfig<"unroll-loops">;
+def WidenLoopsConfig                       : GlobalConfig<"widen-loops">;
 
 //===----------------------------------------------------------------------===//
 // Core Checkers.
@@ -274,11 +318,15 @@ def CXXSelfAssignmentChecker : Checker<"SelfAssignment">,
 
 } // end: "cplusplus"
 
+def Interprocedural : Config<"Interprocedural">;
+def PureOnly : Config<"PureOnly">;
+
 let ParentPackage = CplusplusOptIn in {
 
 def VirtualCallChecker : Checker<"VirtualCall">,
   HelpText<"Check virtual function calls during construction or destruction">,
-  DescFile<"VirtualCallChecker.cpp">;
+  DescFile<"VirtualCallChecker.cpp">,
+  HasConfigs<[Interprocedural, PureOnly]>;
 
 } // end: "optin.cplusplus"
 
@@ -339,11 +387,14 @@ def UnreachableCodeChecker : Checker<"UnreachableCode">,
 // Performance checkers.
 //===----------------------------------------------------------------------===//
 
+def AllowedPad : Config<"AllowedPad">;
+
 let ParentPackage = Performance in {
 
 def PaddingChecker : Checker<"Padding">,
   HelpText<"Check for excessively padded structs.">,
-  DescFile<"PaddingChecker.cpp">;
+  DescFile<"PaddingChecker.cpp">,
+  HasConfigs<[AllowedPad]>;
 
 } // end: "padding"
 
@@ -501,11 +552,14 @@ def CStringNotNullTerm : Checker<"NotNullTerminated">,
 // Mac OS X, Cocoa, and Core Foundation checkers.
 //===----------------------------------------------------------------------===//
 
+def Pedantic : Config<"Pedantic">;
+
 let ParentPackage = OSX in {
 
 def NumberObjectConversionChecker : Checker<"NumberObjectConversion">,
   HelpText<"Check for erroneous conversions of objects representing numbers into numbers">,
-  DescFile<"NumberObjectConversionChecker.cpp">;
+  DescFile<"NumberObjectConversionChecker.cpp">,
+  HasConfigs<[Pedantic]>;
 
 def MacOSXAPIChecker : Checker<"API">,
   HelpText<"Check for proper uses of various Apple APIs">,
@@ -636,6 +690,9 @@ def ObjCContainersChecker : Checker<"OutOfBounds">,
 
 }
 
+// FIXME: Only used by NonLocalizedStringChecker, should be attached there?
+def AggressiveReportConfig : GlobalConfig<"AggressiveReport">;
+
 let ParentPackage = LocalizabilityOptIn in {
 def NonLocalizedStringChecker : Checker<"NonLocalizedStringChecker">,
   HelpText<"Warns about uses of non-localized NSStrings passed to UI methods expecting localized NSStrings">,
@@ -682,11 +739,20 @@ def GTestChecker : Checker<"GTest">,
 // Debugging checkers (for analyzer development).
 //===----------------------------------------------------------------------===//
 
+def Bind             : Config<"Bind">;
+def PostStmtCastExpr : Config<"PostStmtCastExpr">;
+def PreStmtCastExpr  : Config<"PreStmtCastExpr">;
+def RegionChanges    : Config<"RegionChanges">;
+
 let ParentPackage = Debug in {
 
 def AnalysisOrderChecker : Checker<"AnalysisOrder">,
   HelpText<"Print callbacks that are called during analysis in order">,
-  DescFile<"AnalysisOrder.cpp">;
+  DescFile<"AnalysisOrder.cpp">,
+  HasConfigs<[Bind,
+              PostStmtCastExpr,
+              PreStmtCastExpr,
+              RegionChanges]>;
 
 def DominatorsTreeDumper : Checker<"DumpDominators">,
   HelpText<"Print the dominance tree for a given CFG">,
@@ -751,11 +817,20 @@ def BugHashDumper : Checker<"DumpBugHash">,
 // Clone Detection
 //===----------------------------------------------------------------------===//
 
+def IgnoredFilesPattern : Config<"IgnoredFilesPattern">;
+def MinimumCloneComplexity : Config<"MinimumCloneComplexity">;
+def ReportNormalClones : Config<"ReportNormalClones">;
+def ReportSuspiciousClones : Config<"ReportSuspiciousClones">;
+
 let ParentPackage = CloneDetectionAlpha in {
 
 def CloneChecker : Checker<"CloneChecker">,
   HelpText<"Reports similar pieces of code.">,
-  DescFile<"CloneChecker.cpp">;
+  DescFile<"CloneChecker.cpp">,
+  HasConfigs<[IgnoredFilesPattern,
+              MinimumCloneComplexity,
+              ReportNormalClones,
+              ReportSuspiciousClones]>;
 
 } // end "clone"
 

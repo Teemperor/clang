@@ -170,6 +170,8 @@ def warn_unknown_warning_specifier : Warning<
 
 def err_unknown_analyzer_checker : Error<
     "no analyzer checkers are associated with '%0'">;
+def err_unknown_analyzer_config : Error<
+    "no analyzer configs are associated with '%0'">;
 def note_suggest_disabling_all_checkers : Note<
     "use -analyzer-disable-all-checks to disable all static analyzer checkers">;
 
