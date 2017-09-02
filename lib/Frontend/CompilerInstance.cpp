@@ -302,8 +302,8 @@ CompilerInstance::createDiagnostics(DiagnosticOptions *Opts,
 
 void CompilerInstance::createFileManager() {
   if (!hasVirtualFileSystem()) {
-    // TODO: choose the virtual file system based on the CompilerInvocation.
-    setVirtualFileSystem(vfs::getRealFileSystem());
+    setVirtualFileSystem(
+        createVFSFromCompilerInvocation(getInvocation(), getDiagnostics()));
   }
   FileMgr = new FileManager(getFileSystemOpts(), VirtualFileSystem);
 }
