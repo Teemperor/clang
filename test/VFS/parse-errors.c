@@ -12,3 +12,6 @@
 // RUN: not %clang_cc1 -ivfsoverlay %S/Inputs/unknown-value.yaml -fsyntax-only %s 2>&1 | FileCheck -check-prefix=CHECK-UNKNOWN-VALUE %s
 // CHECK-UNKNOWN-VALUE: expected boolean value
 // CHECK-UNKNOWN-VALUE: invalid virtual filesystem overlay file
+
+// Shouldn't crash:
+// RUN: %clang_cc1 -ivfsoverlay %S/Inputs/empty-top-dir.yaml -fsyntax-only %s

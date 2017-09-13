@@ -1084,8 +1084,10 @@ class RedirectingFileSystemParser {
       assert(DE && "Must be a directory");
       // Empty directories could be present in the YAML as a way to
       // describe a file for a current directory after some of its subdir
-      // is parsed. This only leads to redundant walks, ignore it.
-      if (!Name.empty())
+      // is parsed. This only leads to redundant walks, ignore it unless
+      // we're a top-level directory in which case the walk is necessary to
+      // create the entry for the first time.
+      if (!Name.empty() || !NewParentE)
         NewParentE = lookupOrCreateEntry(FS, Name, NewParentE);
       for (std::unique_ptr<Entry> &SubEntry :
            llvm::make_range(DE->contents_begin(), DE->contents_end()))

@@ -1,0 +1,6 @@
+{ 'version': 0, 'roots': [{ 'name': '', 'type': 'directory',
+  'contents':
+    [{ 'name': 'a-file-name', 'type': 'file',
+      'external-contents': 'somepath.file'
+    }]
+}]}
