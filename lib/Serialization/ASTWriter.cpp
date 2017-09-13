@@ -4491,12 +4491,24 @@ ASTFileSignature ASTWriter::WriteAST(Sema &SemaRef,
   this->BaseDirectory.clear();
 
   WritingAST = false;
+
+  const static uint64_t ModuleFileSizeLimit = 512ul * 1024 * 1024;
+  uint64_t ModuleFileSize;
+  if (!llvm::sys::fs::file_size(OutputFile, ModuleFileSize)) {
+    if (ModuleFileSize > ModuleFileSizeLimit) {
+      SemaRef.getDiagnostics().Report(diag::err_fe_pch_too_big) << std::to_string(ModuleFileSize)
+                                                                << std::to_string(ModuleFileSizeLimit) <<
+                                                                   OutputFile;
+    }
+  }
+
   if (SemaRef.Context.getLangOpts().ImplicitModules && WritingModule) {
     // Construct MemoryBuffer and update buffer manager.
     PCMCache.addBuffer(OutputFile,
                        llvm::MemoryBuffer::getMemBufferCopy(
                            StringRef(Buffer.begin(), Buffer.size())));
   }
+
   return Signature;
 }
 

@@ -16,6 +16,8 @@ def err_fe_not_a_pch_file : Error<
     "input is not a PCH file: '%0'">;
 def err_fe_pch_malformed : Error<
     "malformed or corrupted AST file: '%0'">, DefaultFatal;
+def err_fe_pch_too_big : Error<
+    "AST file bigger than AST file size limit. File is %0 bytes, but the limit is %1: '%2'">, DefaultFatal;
 def err_fe_pch_malformed_block : Error<
     "malformed block record in PCH file: '%0'">, DefaultFatal;
 def err_fe_pch_file_modified : Error<
