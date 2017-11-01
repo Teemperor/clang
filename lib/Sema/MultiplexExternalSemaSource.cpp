@@ -21,6 +21,7 @@ using namespace clang;
 ///
 MultiplexExternalSemaSource::MultiplexExternalSemaSource(ExternalSemaSource &s1,
                                                         ExternalSemaSource &s2){
+  assert(s1 && s2 && "s1 and s2 must both be non-null");
   Sources.push_back(&s1);
   Sources.push_back(&s2);
 }
