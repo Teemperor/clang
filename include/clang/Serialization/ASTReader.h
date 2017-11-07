@@ -1211,6 +1211,7 @@ private:
   uint32_t getGenerationOrNull() const {
     if (ContextObj)
       return getGeneration(*ContextObj);
+    assert(ContextObj && "Called getGeneration without Context");
     return 0u;
   }
 
