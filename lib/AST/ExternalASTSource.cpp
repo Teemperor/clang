@@ -27,6 +27,15 @@ using namespace clang;
 
 ExternalASTSource::~ExternalASTSource() = default;
 
+uint32_t ExternalASTSource::getGeneration(const ASTContext &C) const {
+  // Make sure we return the generation of the topmost external source for the
+  // context as this is the one we increment.
+  auto *P = C.getExternalSource();
+  if (P && P != this)
+    return P->getGeneration(C);
+  return CurrentGeneration;
+}
+
 llvm::Optional<ExternalASTSource::ASTSourceDescriptor>
 ExternalASTSource::getSourceDescriptor(unsigned ID) {
   return None;

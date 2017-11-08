@@ -2874,18 +2874,27 @@ inline void operator delete[](void *Ptr, const clang::ASTContext &C, size_t) {
   C.Deallocate(Ptr);
 }
 
+// Note, this is implemented here so that ExternalASTSource.h doesn't need to
+// include ASTContext.h. We explicitly instantiate it for all relevant types
+// in ASTContext.cpp.
+
 /// \brief Create the representation of a LazyGenerationalUpdatePtr.
 template <typename Owner, typename T,
           void (clang::ExternalASTSource::*Update)(Owner)>
 typename clang::LazyGenerationalUpdatePtr<Owner, T, Update>::ValueType
     clang::LazyGenerationalUpdatePtr<Owner, T, Update>::makeValue(
         const clang::ASTContext &Ctx, T Value) {
-  // Note, this is implemented here so that ExternalASTSource.h doesn't need to
-  // include ASTContext.h. We explicitly instantiate it for all relevant types
-  // in ASTContext.cpp.
-  if (auto *Source = Ctx.getExternalSource())
-    return new (Ctx) LazyData(Source, Value);
+  if (Ctx.getExternalSource())
+    return new (Ctx) LazyData(&Ctx, Value);
   return Value;
+}
+
+template <typename Owner, typename T,
+          void (clang::ExternalASTSource::*Update)(Owner)>
+typename clang::ExternalASTSource*
+    clang::LazyGenerationalUpdatePtr<Owner, T, Update>::getExternalSource(
+        const clang::ASTContext &Ctx) {
+  return Ctx.getExternalSource();
 }
 
 #endif // LLVM_CLANG_AST_ASTCONTEXT_H
