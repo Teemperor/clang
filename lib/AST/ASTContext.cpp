@@ -9723,3 +9723,7 @@ clang::LazyGenerationalUpdatePtr<
 clang::LazyGenerationalUpdatePtr<
     const Decl *, Decl *, &ExternalASTSource::CompleteRedeclChain>::makeValue(
         const clang::ASTContext &Ctx, Decl *Value);
+template clang::ExternalASTSource*
+clang::LazyGenerationalUpdatePtr<
+    const Decl *, Decl *, &ExternalASTSource::CompleteRedeclChain>::getExternalSource(
+        const clang::ASTContext &Ctx);

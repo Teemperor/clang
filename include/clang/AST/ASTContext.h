@@ -519,6 +519,10 @@ public:
   IntrusiveRefCntPtr<ExternalASTSource> ExternalSource;
   ASTMutationListener *Listener;
 
+  /// Generation number for the external AST source. Must be increased
+  /// whenever we might have added new redeclarations for existing decls.
+  uint32_t CurrentGeneration = 0;
+
   /// \brief Contains parents of a node.
   typedef llvm::SmallVector<ast_type_traits::DynTypedNode, 2> ParentVector;
 
@@ -1030,6 +1034,15 @@ public:
   /// \brief Retrieve a pointer to the AST mutation listener associated
   /// with this AST context, if any.
   ASTMutationListener *getASTMutationListener() const { return Listener; }
+
+  uint32_t getGeneration() const { return CurrentGeneration; }
+  uint32_t incrementGeneration() {
+    uint32_t OldGeneration = CurrentGeneration;
+    CurrentGeneration++;
+    assert(CurrentGeneration > OldGeneration &&
+           "Overflowed generation counter");
+    return OldGeneration;
+  }
 
   void PrintStats() const;
   const SmallVectorImpl<Type *>& getTypes() const { return Types; }
@@ -2874,18 +2887,27 @@ inline void operator delete[](void *Ptr, const clang::ASTContext &C, size_t) {
   C.Deallocate(Ptr);
 }
 
+// Note, this is implemented here so that ExternalASTSource.h doesn't need to
+// include ASTContext.h. We explicitly instantiate it for all relevant types
+// in ASTContext.cpp.
+
 /// \brief Create the representation of a LazyGenerationalUpdatePtr.
 template <typename Owner, typename T,
           void (clang::ExternalASTSource::*Update)(Owner)>
 typename clang::LazyGenerationalUpdatePtr<Owner, T, Update>::ValueType
     clang::LazyGenerationalUpdatePtr<Owner, T, Update>::makeValue(
         const clang::ASTContext &Ctx, T Value) {
-  // Note, this is implemented here so that ExternalASTSource.h doesn't need to
-  // include ASTContext.h. We explicitly instantiate it for all relevant types
-  // in ASTContext.cpp.
-  if (auto *Source = Ctx.getExternalSource())
-    return new (Ctx) LazyData(Source, Value);
+  if (Ctx.getExternalSource())
+    return new (Ctx) LazyData(&Ctx, Value);
   return Value;
+}
+
+template <typename Owner, typename T,
+          void (clang::ExternalASTSource::*Update)(Owner)>
+typename clang::ExternalASTSource*
+    clang::LazyGenerationalUpdatePtr<Owner, T, Update>::getExternalSource(
+        const clang::ASTContext &Ctx) {
+  return Ctx.getExternalSource();
 }
 
 #endif // LLVM_CLANG_AST_ASTCONTEXT_H
