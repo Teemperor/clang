@@ -13965,6 +13965,7 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func,
   // FIXME: Is this really right?
   if (CurContext == Func) return;
 
+  bool WillBeDefined = false;
   // Implicit instantiation of function templates and member functions of
   // class templates.
   if (Func->isImplicitlyInstantiable()) {
@@ -14007,6 +14008,7 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func,
                                                        PointOfInstantiation));
         // Notify the consumer that a function was implicitly instantiated.
         Consumer.HandleCXXImplicitFunctionInstantiation(Func);
+        WillBeDefined = Func->getTemplateInstantiationPattern()->isDefined();
       }
     }
   } else {
@@ -14020,7 +14022,7 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func,
   if (!OdrUse) return;
 
   // Keep track of used but undefined functions.
-  if (!Func->isDefined()) {
+  if (!Func->isDefined() && !WillBeDefined) {
     if (mightHaveNonExternalLinkage(Func))
       UndefinedButUsed.insert(std::make_pair(Func->getCanonicalDecl(), Loc));
     else if (Func->getMostRecentDecl()->isInlined() &&
