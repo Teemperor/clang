@@ -5126,12 +5126,25 @@ void ASTWriter::WriteDeclUpdatesBlocks(RecordDataImpl &OffsetsRecord) {
 
       switch (Kind) {
       case UPD_CXX_ADDED_IMPLICIT_MEMBER:
-      case UPD_CXX_ADDED_TEMPLATE_SPECIALIZATION:
       case UPD_CXX_ADDED_ANONYMOUS_NAMESPACE:
         assert(Update.getDecl() && "no decl to add?");
         Record.push_back(GetDeclRef(Update.getDecl()));
         break;
-
+      case UPD_CXX_ADDED_TEMPLATE_SPECIALIZATION: {
+        const Decl *Spec = Update.getDecl();
+        assert(Spec && "no decl to add?");
+        Record.push_back(GetDeclRef(Spec));
+        ArrayRef<TemplateArgument> Args;
+        if (auto *CTSD = dyn_cast<ClassTemplateSpecializationDecl>(Spec))
+          Args = CTSD->getTemplateArgs().asArray();
+        else if (auto *VTSD = dyn_cast<VarTemplateSpecializationDecl>(Spec))
+          Args = VTSD->getTemplateArgs().asArray();
+        else if (auto *FD = dyn_cast<FunctionDecl>(Spec))
+          Args = FD->getTemplateSpecializationArgs()->asArray();
+        assert(Args.size());
+        Record.push_back(TemplateArgumentList::ComputeODRHash(Args));
+        break;
+      }
       case UPD_CXX_ADDED_FUNCTION_DEFINITION:
         break;
 

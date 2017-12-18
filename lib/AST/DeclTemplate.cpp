@@ -17,6 +17,7 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/ODRHash.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/TemplateName.h"
 #include "clang/AST/Type.h"
@@ -186,14 +187,29 @@ void RedeclarableTemplateDecl::loadLazySpecializationsImpl() const {
   // Grab the most recent declaration to ensure we've loaded any lazy
   // redeclarations of this template.
   CommonBase *CommonBasePtr = getMostRecentDecl()->getCommonPtr();
-  if (CommonBasePtr->LazySpecializations) {
-    ASTContext &Context = getASTContext();
-    uint32_t *Specs = CommonBasePtr->LazySpecializations;
+  if (auto *Specs = CommonBasePtr->LazySpecializations) {
     CommonBasePtr->LazySpecializations = nullptr;
-    for (uint32_t I = 0, N = *Specs++; I != N; ++I)
-      (void)Context.getExternalSource()->GetExternalDecl(Specs[I]);
+    for (uint32_t I = 0, N = Specs[0].DeclID; I != N; ++I)
+      (void)loadLazySpecializationImpl(Specs[I+1].DeclID);
   }
 }
+
+Decl *RedeclarableTemplateDecl::loadLazySpecializationImpl(uint32_t ID) const {
+  return getASTContext().getExternalSource()->GetExternalDecl(ID);
+}
+
+void
+RedeclarableTemplateDecl::loadLazySpecializationsImpl(ArrayRef<TemplateArgument>
+                                                      Args) const {
+  CommonBase *CommonBasePtr = getMostRecentDecl()->getCommonPtr();
+  if (auto *Specs = CommonBasePtr->LazySpecializations) {
+    unsigned Hash = TemplateArgumentList::ComputeODRHash(Args);
+    CommonBasePtr->LazySpecializations = nullptr;
+    for (uint32_t I = 0, N = Specs[0].DeclID; I != N; ++I)
+      if (Specs[I+1].ODRHash == Hash)
+        (void)loadLazySpecializationImpl(Specs[I+1].DeclID);
+   }
+ }
 
 template<class EntryType>
 typename RedeclarableTemplateDecl::SpecEntryTraits<EntryType>::DeclType *
@@ -201,6 +217,8 @@ RedeclarableTemplateDecl::findSpecializationImpl(
     llvm::FoldingSetVector<EntryType> &Specs, ArrayRef<TemplateArgument> Args,
     void *&InsertPos) {
   using SETraits = SpecEntryTraits<EntryType>;
+
+  loadLazySpecializationsImpl(Args);
 
   llvm::FoldingSetNodeID ID;
   EntryType::Profile(ID, Args, getASTContext());
@@ -276,7 +294,8 @@ FunctionTemplateDecl::getSpecializations() const {
 FunctionDecl *
 FunctionTemplateDecl::findSpecialization(ArrayRef<TemplateArgument> Args,
                                          void *&InsertPos) {
-  return findSpecializationImpl(getSpecializations(), Args, InsertPos);
+  auto *Common = getCommonPtr();
+  return findSpecializationImpl(Common->Specializations, Args, InsertPos);
 }
 
 void FunctionTemplateDecl::addSpecialization(
@@ -357,7 +376,8 @@ ClassTemplateDecl::newCommon(ASTContext &C) const {
 ClassTemplateSpecializationDecl *
 ClassTemplateDecl::findSpecialization(ArrayRef<TemplateArgument> Args,
                                       void *&InsertPos) {
-  return findSpecializationImpl(getSpecializations(), Args, InsertPos);
+  auto *Common = getCommonPtr();
+  return findSpecializationImpl(Common->Specializations, Args, InsertPos);
 }
 
 void ClassTemplateDecl::AddSpecialization(ClassTemplateSpecializationDecl *D,
@@ -651,6 +671,14 @@ TemplateArgumentList::CreateCopy(ASTContext &Context,
                                  ArrayRef<TemplateArgument> Args) {
   void *Mem = Context.Allocate(totalSizeToAlloc<TemplateArgument>(Args.size()));
   return new (Mem) TemplateArgumentList(Args);
+}
+
+unsigned TemplateArgumentList::ComputeODRHash(ArrayRef<TemplateArgument> Args) {
+  ODRHash Hasher;
+  for (TemplateArgument TA : Args)
+    Hasher.AddTemplateArgument(TA);
+
+  return Hasher.CalculateHash();
 }
 
 FunctionTemplateSpecializationInfo *
@@ -958,7 +986,8 @@ VarTemplateDecl::newCommon(ASTContext &C) const {
 VarTemplateSpecializationDecl *
 VarTemplateDecl::findSpecialization(ArrayRef<TemplateArgument> Args,
                                     void *&InsertPos) {
-  return findSpecializationImpl(getSpecializations(), Args, InsertPos);
+  auto *Common = getCommonPtr();
+  return findSpecializationImpl(Common->Specializations, Args, InsertPos);
 }
 
 void VarTemplateDecl::AddSpecialization(VarTemplateSpecializationDecl *D,

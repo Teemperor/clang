@@ -235,6 +235,9 @@ public:
   static TemplateArgumentList *CreateCopy(ASTContext &Context,
                                           ArrayRef<TemplateArgument> Args);
 
+  /// \brief Create hash for the given arguments.
+  static unsigned ComputeODRHash(ArrayRef<TemplateArgument> Args);
+
   /// \brief Construct a new, temporary template argument list on the stack.
   ///
   /// The template argument list does not own the template arguments
@@ -750,6 +753,19 @@ class RedeclarableTemplateDecl : public TemplateDecl,
     return getMostRecentDecl();
   }
 
+  struct DeclIDHash {
+    uint32_t DeclID = ~0U;
+    unsigned ODRHash = ~0U;
+    DeclIDHash(uint32_t ID, unsigned Hash = ~0U) : DeclID(ID), ODRHash(Hash) { }
+    DeclIDHash() { }
+    bool operator < (const DeclIDHash &Other) const {
+      return DeclID < Other.DeclID;
+    }
+    bool operator == (const DeclIDHash &Other) const {
+      return DeclID == Other.DeclID;
+    }
+  };
+
 protected:
   template <typename EntryType> struct SpecEntryTraits {
     using DeclType = EntryType;
@@ -791,6 +807,8 @@ protected:
   }
 
   void loadLazySpecializationsImpl() const;
+  void loadLazySpecializationsImpl(llvm::ArrayRef<TemplateArgument> Args) const;
+  Decl *loadLazySpecializationImpl(uint32_t ID) const;
 
   template <class EntryType> typename SpecEntryTraits<EntryType>::DeclType*
   findSpecializationImpl(llvm::FoldingSetVector<EntryType> &Specs,
@@ -816,7 +834,7 @@ protected:
     ///
     /// The first value in the array is the number of specializations/partial
     /// specializations that follow.
-    uint32_t *LazySpecializations = nullptr;
+    DeclIDHash *LazySpecializations = nullptr;
   };
 
   /// \brief Pointer to the common data shared by all declarations of this
