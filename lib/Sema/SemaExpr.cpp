@@ -14937,7 +14937,9 @@ static void DoMarkVarDeclReferenced(Sema &SemaRef, SourceLocation Loc,
   // Note that we use the C++11 definition everywhere because nothing in
   // C++03 depends on whether we get the C++03 version correct. The second
   // part does not apply to references, since they are not objects.
-  if (OdrUseContext && E &&
+  bool InitIsValueDependent =
+      Var->hasInit() && Var->getInit()->isValueDependent();
+  if (OdrUseContext && E && !InitIsValueDependent &&
       IsVariableAConstantExpression(Var, SemaRef.Context)) {
     // A reference initialized by a constant expression can never be
     // odr-used, so simply ignore it.
