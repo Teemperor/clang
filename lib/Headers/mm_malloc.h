@@ -24,19 +24,23 @@
 #ifndef __MM_MALLOC_H
 #define __MM_MALLOC_H
 
-#include <stdlib.h>
+#include <stddef.h>
 
 #ifdef _WIN32
 #include <malloc.h>
 #else
 #ifndef __cplusplus
 extern int posix_memalign(void **__memptr, size_t __alignment, size_t __size);
+extern void free(void *ptr);
+extern void *malloc(size_t size) __attribute__((__malloc__));
 #else
-// Some systems (e.g. those with GNU libc) declare posix_memalign with an
-// exception specifier. Via an "egregious workaround" in
-// Sema::CheckEquivalentExceptionSpec, Clang accepts the following as a valid
-// redeclaration of glibc's declaration.
-extern "C" int posix_memalign(void **__memptr, size_t __alignment, size_t __size);
+// Some systems (e.g. those with GNU libc) declare some of these functions with
+// an exception specifier. Via an "egregious workaround" in
+// Sema::CheckEquivalentExceptionSpec, Clang accepts the those as valid
+// redeclarations of our functions.
+extern "C" int posix_memalign(void **__memptr, size_t __alignment, size_t __size) throw();
+extern "C" void free(void *ptr) throw();
+extern "C" void *malloc(size_t size) throw() __attribute__((__malloc__));
 #endif
 #endif
 
