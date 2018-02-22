@@ -59,6 +59,16 @@ addDataToConsumer(T &DataConsumer, Type Data) {
   DataConsumer.update(StringRef(reinterpret_cast<char *>(&Data), sizeof(Data)));
 }
 
+template <class T, class Type>
+void addDataToConsumer(T &DataConsumer, const llvm::iterator_range<Type> &R) {
+  addDataToConsumer(DataConsumer, std::distance(R.begin(), R.end()));
+}
+
+template <class T, class Type>
+void addDataToConsumer(T &DataConsumer, const llvm::ArrayRef<Type> &R) {
+  addDataToConsumer(DataConsumer, R.size());
+}
+
 } // end namespace data_collection
 } // end namespace clang
 

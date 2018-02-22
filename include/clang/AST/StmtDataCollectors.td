@@ -5,6 +5,9 @@ class Stmt {
     // macro-generated code.
     addData(data_collection::getMacroStack(S->getLocStart(), Context));
     addData(data_collection::getMacroStack(S->getLocEnd(), Context));
+
+    // CrossRef
+    addData(S->children());
   }];
 }
 
@@ -28,15 +31,28 @@ class ExpressionTraitExpr {
 class PredefinedExpr {
   code Code = [{
     addData(S->getIdentType());
+    addData(S->getFunctionName()->getString());
   }];
 }
 class TypeTraitExpr {
   code Code = [{
     addData(S->getTrait());
+    // CrossRef
+    addData(S->getNumArgs());
     for (unsigned i = 0; i < S->getNumArgs(); ++i)
       addData(S->getArg(i)->getType());
   }];
 }
+
+class UnaryExprOrTypeTraitExpr {
+  code Code = [{
+    addData(S->getKind());
+    if (S->isArgumentType()) {
+       addData(S->getArgumentType());
+    }
+  }];
+}
+
 
 //--- Calls --------------------------------------------------------------//
 class CallExpr {
@@ -72,6 +88,7 @@ class DeclRefExpr {
 }
 class MemberExpr {
   code Code = [{
+    // I suspect this should be included: addData(S->isArrow());
     addData(S->getMemberDecl()->getName());
   }];
 }
@@ -124,6 +141,12 @@ class ObjCBridgedCastExpr {
   }];
 }
 
+class CastExpr {
+  code Code = [{
+    addData(S->getCastKind());
+  }];
+}
+
 //--- Miscellaneous Exprs ------------------------------------------------//
 class BinaryOperator {
   code Code = [{
@@ -133,6 +156,12 @@ class BinaryOperator {
 class UnaryOperator {
   code Code = [{
     addData(S->getOpcode());
+  }];
+}
+
+class VAArgExpr {
+  code Code = [{
+       addData(S->isMicrosoftABI());
   }];
 }
 
@@ -189,27 +218,48 @@ class CXXFoldExpr {
 }
 class GenericSelectionExpr {
   code Code = [{
+    // CrossRef
+    addData(S->getNumAssocs());
     for (unsigned i = 0; i < S->getNumAssocs(); ++i) {
       addData(S->getAssocType(i));
     }
   }];
 }
+
+class PseudoObjectExpr {
+  code Code = [{
+    // CrossRef
+    addData(S->semantics());
+  }];
+}
+
 class LambdaExpr {
   code Code = [{
+    addData(S->isGenericLambda());
+    addData(S->isMutable());
+    addData(S->hasExplicitParameters());
+    addData(S->hasExplicitResultType());
+
+
+    // CrossRef
+    addData(S->captures());
+    addData(S->explicit_captures());
     for (const LambdaCapture &C : S->captures()) {
       addData(C.isPackExpansion());
       addData(C.getCaptureKind());
       if (C.capturesVariable())
         addData(C.getCapturedVar()->getType());
     }
-    addData(S->isGenericLambda());
-    addData(S->isMutable());
+    
+
   }];
 }
 class DeclStmt {
   code Code = [{
-    auto numDecls = std::distance(S->decl_begin(), S->decl_end());
-    addData(static_cast<unsigned>(numDecls));
+    // CrossRef
+    addData(S->decls());
+
+    // FIXME? As this should be done by a using visitor
     for (const Decl *D : S->decls()) {
       if (const VarDecl *VD = dyn_cast<VarDecl>(D)) {
         addData(VD->getType());
@@ -222,6 +272,12 @@ class AsmStmt {
     addData(S->isSimple());
     addData(S->isVolatile());
     addData(S->generateAsmString(Context));
+
+    // CrossRef + FIXME
+    addData(S->getNumInputs());
+    addData(S->getNumOutputs());
+    addData(S->getNumClobbers());
+
     for (unsigned i = 0; i < S->getNumInputs(); ++i) {
       addData(S->getInputConstraint(i));
     }
@@ -236,7 +292,21 @@ class AsmStmt {
 class AttributedStmt {
   code Code = [{
     for (const Attr *A : S->getAttrs()) {
+       // We duplicate class Attr here to not rely on being integrated
+       // into a RecursiveASTVisitor.
+       std::string AttrString;      
+       llvm::raw_string_ostream OS(AttrString);
+       A->printPretty(OS, Context.getLangOpts());
+       OS.flush();
       addData(std::string(A->getSpelling()));
     }
   }];
 }
+
+class CompoundStmt {
+  code Code = [{
+    // CrossRef
+    addData(S->size());
+  }];
+}
+

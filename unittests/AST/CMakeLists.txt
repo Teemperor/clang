@@ -17,6 +17,7 @@ add_clang_unittest(ASTTests
   NamedDeclPrinterTest.cpp
   SourceLocationTest.cpp
   StmtPrinterTest.cpp
+  CHashTest.cpp
   )
 
 target_link_libraries(ASTTests
