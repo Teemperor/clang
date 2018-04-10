@@ -546,7 +546,7 @@ public:
   ///
   /// Counter must be increased when an external source added new redeclaration
   /// for an existing decl.
-  uint32_t CurrentGeneration = 0;
+  GenerationCounter CurrentGeneration;
 
   /// \brief Contains parents of a node.
   using ParentVector = llvm::SmallVector<ast_type_traits::DynTypedNode, 2>;
@@ -1043,6 +1043,10 @@ public:
   ASTContext &operator=(const ASTContext &) = delete;
   ~ASTContext();
 
+  GenerationCounter *getGenerationCounter() {
+    return &CurrentGeneration;
+  }
+
   /// \brief Attach an external AST source to the AST context.
   ///
   /// The external AST source provides the ability to load parts of
@@ -1068,15 +1072,6 @@ public:
   /// \brief Retrieve a pointer to the AST mutation listener associated
   /// with this AST context, if any.
   ASTMutationListener *getASTMutationListener() const { return Listener; }
-
-  uint32_t getGeneration() const { return CurrentGeneration; }
-  uint32_t incrementGeneration() {
-    uint32_t OldGeneration = CurrentGeneration;
-    CurrentGeneration++;
-    assert(CurrentGeneration > OldGeneration &&
-           "Overflowed generation counter");
-    return OldGeneration;
-  }
 
   void PrintStats() const;
   const SmallVectorImpl<Type *>& getTypes() const { return Types; }

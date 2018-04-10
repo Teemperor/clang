@@ -52,7 +52,7 @@ struct ExternalVTableUse {
 /// analysis.
 class ExternalSemaSource : public ExternalASTSource {
 public:
-  ExternalSemaSource() {
+  ExternalSemaSource(ASTContext &Context) : ExternalASTSource(Context) {
     ExternalASTSource::SemaSource = true;
   }
 

@@ -84,6 +84,10 @@ bool ExternalASTSource::layoutRecordType(
   return false;
 }
 
+ExternalASTSource::ExternalASTSource(ASTContext &Context) {
+  Counter = Context.getGenerationCounter();
+}
+
 Decl *ExternalASTSource::GetExternalDecl(uint32_t ID) {
   return nullptr;
 }
@@ -124,6 +128,6 @@ void ExternalASTSource::FindExternalLexicalDecls(
 
 void ExternalASTSource::getMemoryBufferSizes(MemoryBufferSizes &sizes) const {}
 
-uint32_t ExternalASTSource::incrementGeneration(ASTContext &C) {
-  return C.incrementGeneration();
+uint32_t ExternalASTSource::incrementGeneration() {
+  return Counter->increase();
 }

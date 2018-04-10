@@ -3864,7 +3864,7 @@ ASTReader::ASTReadResult ASTReader::ReadAST(StringRef FileName,
   // Bump the generation number.
   unsigned PreviousGeneration = 0;
   if (ContextObj)
-    PreviousGeneration = incrementGeneration(*ContextObj);
+    PreviousGeneration = incrementGeneration();
 
   unsigned NumModules = ModuleMgr.size();
   SmallVector<ImportedModule, 4> Loaded;

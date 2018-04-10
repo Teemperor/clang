@@ -21,7 +21,7 @@ namespace {
 // to modify the AST in some way.
 class ASTSourceTester : public clang::ExternalSemaSource {
 public:
-  void testIncrementGeneration(clang::ASTContext &C) { incrementGeneration(C); }
+  void testIncrementGeneration(clang::ASTContext &C) { incrementGeneration(); }
 };
 } // namespace
 
@@ -46,23 +46,23 @@ TEST(GenerationCounter, MultipleConsumers) {
   // Pretend each source modifies the AST and increments the generation counter.
   // After each step the generation counter needs to be identical for each
   // source (but different than the previous counter value).
-  Source1.testIncrementGeneration(C);
-  ASSERT_EQ(Source1.getGeneration(C), Source2.getGeneration(C));
-  ASSERT_EQ(Source1.getGeneration(C), Multiplexer->getGeneration(C));
-  ASSERT_NE(Source1.getGeneration(C), OldGeneration);
+  Source1.testIncrementGeneration();
+  ASSERT_EQ(Source1.getGeneration(), Source2.getGeneration());
+  ASSERT_EQ(Source1.getGeneration(), Multiplexer->getGeneration());
+  ASSERT_NE(Source1.getGeneration(), OldGeneration);
   OldGeneration = Source1.getGeneration(C);
 
-  Source2.testIncrementGeneration(C);
-  ASSERT_EQ(Source1.getGeneration(C), Source2.getGeneration(C));
-  ASSERT_EQ(Source1.getGeneration(C), Multiplexer->getGeneration(C));
-  ASSERT_NE(Source1.getGeneration(C), OldGeneration);
+  Source2.testIncrementGeneration();
+  ASSERT_EQ(Source1.getGeneration(), Source2.getGeneration());
+  ASSERT_EQ(Source1.getGeneration(), Multiplexer->getGeneration());
+  ASSERT_NE(Source1.getGeneration(), OldGeneration);
 
   // Just add the last source which should also directly inherit the correct
   // generation counter value.
   Multiplexer->addSource(NewSource);
-  ASSERT_EQ(NewSource.getGeneration(C), Source1.getGeneration(C));
-  ASSERT_EQ(NewSource.getGeneration(C), Source2.getGeneration(C));
-  ASSERT_EQ(NewSource.getGeneration(C), Multiplexer->getGeneration(C));
+  ASSERT_EQ(NewSource.getGeneration(), Source1.getGeneration());
+  ASSERT_EQ(NewSource.getGeneration(), Source2.getGeneration());
+  ASSERT_EQ(NewSource.getGeneration(), Multiplexer->getGeneration());
 }
 
 } // namespace clang
