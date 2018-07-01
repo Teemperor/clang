@@ -9,6 +9,7 @@ add_clang_executable(clang-clone-finder
   )
 
 target_link_libraries(clang-clone-finder
+  PRIVATE
   clangAST
   clangBasic
   clangDriver

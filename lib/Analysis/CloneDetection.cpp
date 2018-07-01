@@ -247,9 +247,9 @@ static size_t createHash(llvm::MD5 &Hash) {
 ///
 /// If the given Stmt is a CompoundStmt, this method will also generate
 /// hashes for all possible StmtSequences in the children of this Stmt.
-static size_t
-saveHash(const Stmt *S, const Decl *D,
-         std::vector<std::pair<size_t, StmtSequence>> &StmtsByHash) {
+size_t
+RecursiveCloneTypeIIHashConstraint::saveHash(const Stmt *S, const Decl *D,
+         std::vector<std::pair<size_t, StmtSequence>> &StmtsByHash) const {
   llvm::MD5 Hash;
   ASTContext &Context = D->getASTContext();
 

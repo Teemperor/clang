@@ -262,6 +262,9 @@ public:
 /// through a more detailed analysis.
 class RecursiveCloneTypeIIHashConstraint {
 public:
+  size_t
+  saveHash(const Stmt *S, const Decl *D,
+           std::vector<std::pair<size_t, StmtSequence>> &StmtsByHash) const;
   void constrain(std::vector<CloneDetector::CloneGroup> &Sequences);
 };
 

@@ -35,6 +35,7 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/TargetSelect.h"
 
+#include <unordered_set>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -60,10 +61,17 @@ void printLines(std::string str, unsigned start, unsigned stop) {
 
 struct ImportantDeclVisitor : RecursiveASTVisitor<ImportantDeclVisitor> {
   CloneDetector* Detector;
+  std::unordered_set<std::string> Decls;
   bool VisitFunctionDecl(FunctionDecl *D) {
-    if (D->hasBody() && D->getASTContext().getSourceManager().isInMainFile(D->getLocation())) {
-      Detector->analyzeCodeBody(D);
-    }
+    if (!D->hasBody())
+      return true;
+    if (!D->getASTContext().getSourceManager().isInMainFile(D->getLocation()))
+      return true;
+    std::string Name = D->getNameAsString();
+    if (Decls.count(Name) != 0)
+      return true;
+    Decls.insert(Name);
+    Detector->analyzeCodeBody(D);
     return true;
   }
 };
@@ -84,7 +92,7 @@ int main(int argc, const char **argv) {
   std::string error;
   std::unique_ptr<CompilationDatabase> DB = JSONCompilationDatabase::loadFromDirectory(".", error);
 
-  if (!error.empty()) {
+  if (!DB && !error.empty()) {
     std::cerr << error << std::endl;
     return 1;
   }
@@ -93,7 +101,7 @@ int main(int argc, const char **argv) {
 
 
   unsigned done = 0;
-  const unsigned limit = 170;
+  unsigned limit = 100;
   std::vector<std::string *> SourceCode;
   std::map<ASTContext *, std::string *> ASTToCode;
   std::mutex lock;
@@ -112,16 +120,20 @@ int main(int argc, const char **argv) {
   for (unsigned i = 1; i <= 7; i++) {
       auto t = new std::thread([i, &Jobs, &Detector, &SourceCode, &ASTToCode, &lock, limit]() {
           while (true) {
-            lock.lock();
-            if (Jobs.empty()) {
-              lock.unlock();
-              break;
+
+            ParseJob job;
+
+            {
+              std::lock_guard<std::mutex> guard(lock);
+              if (Jobs.empty())
+                break;
+
+              job = Jobs.front();
+              Jobs.pop_front();
+              std::cout << "T" << i << " [" << (limit - Jobs.size()) << "/" << limit << "] " << job.CC.Filename << std::endl;
             }
-            ParseJob job = Jobs.front();
-            Jobs.pop_front();
+
             CompileCommand CC = job.CC;
-            std::cout << "T" << i << " [" << (limit - Jobs.size()) << "/" << limit << "] " << CC.Filename << std::endl;
-            lock.unlock();
 
             ImportantDeclVisitor Visitor;
             Visitor.Detector = &Detector;
@@ -135,16 +147,29 @@ int main(int argc, const char **argv) {
             codeFile.seekg(0);
             codeFile.read(&(*Code)[0], size);
 
-            CC.CommandLine.push_back("-I");
-            CC.CommandLine.push_back("/home/teemperor/clones/rel/lib/clang/5.0.0/include/");
+            //CC.CommandLine.push_back("-I");
+            //CC.CommandLine.push_back("/home/teemperor/clones/rel/lib/clang/5.0.0/include/");
+            CC.CommandLine.push_back("-resource-dir");
+            CC.CommandLine.push_back("/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/9.1.0");
+            CC.CommandLine.push_back("-isysroot");
+            CC.CommandLine.push_back("/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.13.sdk");
+            CC.CommandLine.push_back("-I/usr/local/include");
+            CC.CommandLine.push_back("-stdlib=libc++");
+            CC.CommandLine.push_back("-Wno-unused-command-line-argument");
 
-            std::unique_ptr<ASTUnit> ASTUnit = clang::tooling::buildASTFromCodeWithArgs(*Code, CC.CommandLine, CC.Filename, "clone-finder");
-            lock.lock();
-            SourceCode.push_back(Code);
-            ASTToCode[&ASTUnit->getASTContext()] = Code;
-            Visitor.TraverseTranslationUnitDecl(ASTUnit->getASTContext().getTranslationUnitDecl());
-            ASTUnit.release();
-            lock.unlock();
+            auto &v = CC.CommandLine;
+            auto itr = std::find(v.begin(), v.end(), "-Wunused-command-line-argument");
+            if (itr != v.end()) v.erase(itr);
+
+            std::unique_ptr<ASTUnit> ASTUnit =
+                clang::tooling::buildASTFromCodeWithArgs(*Code, CC.CommandLine, CC.Filename, "clone-finder");
+            {
+              std::lock_guard<std::mutex> guard(lock);
+              SourceCode.push_back(Code);
+              ASTToCode[&ASTUnit->getASTContext()] = Code;
+              Visitor.TraverseTranslationUnitDecl(ASTUnit->getASTContext().getTranslationUnitDecl());
+              ASTUnit.release();
+            }
           }
       });
       Threads.push_back(t);
@@ -168,9 +193,8 @@ int main(int argc, const char **argv) {
   std::cout << "Found " << AllCloneGroups.size() << " clones" << std::endl;
 
   for (auto&CloneGroup : AllCloneGroups) {
-    //std::cout << "GROUP:" << "\n";
+    std::cout << "GROUP:" << "\n";
     for (auto &Clone : CloneGroup) {
-        break;
       unsigned StartLine = Clone.getASTContext().getSourceManager().getSpellingLineNumber(Clone.front()->getLocStart());
       unsigned EndLine = Clone.getASTContext().getSourceManager().getSpellingLineNumber(Clone.back()->getLocEnd());
       std::cout << "File: " << Clone.getASTContext().getSourceManager().getFilename(Clone.front()->getLocStart()).str();
