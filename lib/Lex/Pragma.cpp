@@ -599,6 +599,17 @@ void Preprocessor::HandlePragmaPushMacro(Token &PushMacroTok) {
   IdentifierInfo *IdentInfo = ParsePragmaPushOrPopMacro(PushMacroTok);
   if (!IdentInfo) return;
 
+  if (IdentInfo->isOutOfDate()) {
+    bool CurrentIsPoisoned = false;
+    if (IdentInfo == Ident__VA_ARGS__)
+      CurrentIsPoisoned = Ident__VA_ARGS__->isPoisoned();
+
+    updateOutOfDateIdentifier(*IdentInfo);
+
+    if (IdentInfo == Ident__VA_ARGS__)
+      IdentInfo->setIsPoisoned(CurrentIsPoisoned);
+  }
+
   // Get the MacroInfo associated with IdentInfo.
   MacroInfo *MI = getMacroInfo(IdentInfo);
 
