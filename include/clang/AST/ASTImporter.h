@@ -39,6 +39,7 @@ class Expr;
 class FileManager;
 class NamedDecl;
 class Stmt;
+class Sema;
 class TagDecl;
 class TypeSourceInfo;
 class Attr;
@@ -60,9 +61,9 @@ class Attr;
     using ImportedCXXBaseSpecifierMap =
         llvm::DenseMap<const CXXBaseSpecifier *, CXXBaseSpecifier *>;
 
-  private:
     /// The contexts we're importing to and from.
     ASTContext &ToContext, &FromContext;
+  private:
 
     /// The file managers we're importing to and from.
     FileManager &ToFileManager, &FromFileManager;
@@ -117,6 +118,8 @@ class Attr;
                 bool MinimalImport);
 
     virtual ~ASTImporter();
+
+    Sema *TheSema = nullptr;
 
     /// Whether the importer will perform a minimal import, creating
     /// to-be-completed forward declarations when possible.

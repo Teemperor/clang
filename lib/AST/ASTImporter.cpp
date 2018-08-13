@@ -52,6 +52,8 @@
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/Specifiers.h"
+#include "clang/Sema/Sema.h"
+#include "clang/Sema/Lookup.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
@@ -68,6 +70,69 @@
 #include <memory>
 #include <type_traits>
 #include <utility>
+
+
+static void makeScopes(clang::Sema &sema,
+                          clang::DeclContext *ctxt, std::vector<clang::Scope *> &result) {
+  if (auto parent = ctxt->getParent()) {
+    makeScopes(sema, parent, result);
+
+    clang::Scope *scope = new clang::Scope(result.back(), clang::Scope::DeclScope, sema.getDiagnostics());
+    scope->setEntity(ctxt);
+    result.push_back(scope);
+  } else
+    result.push_back(sema.TUScope);
+}
+
+static std::unique_ptr<clang::LookupResult> do_lookup(clang::Sema &sema,
+                                                      llvm::StringRef name,
+                                                      clang::DeclContext *ctxt) {
+  clang::IdentifierInfo &ident =
+      sema.getASTContext().Idents.get(name);
+
+  std::unique_ptr<clang::LookupResult> lookup_result;
+  lookup_result.reset(new clang::LookupResult(
+      sema, clang::DeclarationName(&ident),
+      clang::SourceLocation(), clang::Sema::LookupOrdinaryName));
+
+  std::vector<clang::Scope *> scopes;
+  makeScopes(sema, ctxt, scopes);
+  sema.LookupName(*lookup_result, scopes.back());
+  // TODO: free memory of scopes
+
+  return lookup_result;
+}
+
+static clang::DeclContext *getEqualLocalContext(clang::Sema &sema,
+                                                clang::DeclContext *foreign_ctxt) {
+
+  while (foreign_ctxt && foreign_ctxt->isInlineNamespace())
+    foreign_ctxt = foreign_ctxt->getParent();
+
+  if (!foreign_ctxt)
+    return sema.getASTContext().getTranslationUnitDecl();
+
+  clang::DeclContext *parent = getEqualLocalContext(sema, foreign_ctxt->getParent());
+
+  if (foreign_ctxt->isNamespace()) {
+    clang::NamedDecl *ns = llvm::dyn_cast<clang::NamedDecl>(foreign_ctxt);
+    llvm::StringRef ns_name = ns->getName();
+
+    auto lookup_result = do_lookup(sema, ns_name, parent);
+    for (clang::NamedDecl *named_decl : *lookup_result) {
+      if (named_decl->getName() != ns_name)
+        continue;
+      if (named_decl->getKind() != ns->getKind())
+        continue;
+
+      if (clang::DeclContext *DC = llvm::dyn_cast<clang::DeclContext>(named_decl))
+        return DC->getPrimaryContext();
+    }
+    llvm::errs() << "CANT " << ns->getNameAsString() << "\n";
+  }
+  return sema.getASTContext().getTranslationUnitDecl();
+}
+
 
 namespace clang {
 
@@ -4471,9 +4536,61 @@ Decl *ASTNodeImporter::VisitClassTemplateSpecializationDecl(
     return Importer.MapImported(D, ImportedDef);
   }
 
-  auto *ClassTemplate =
-      cast_or_null<ClassTemplateDecl>(Importer.Import(
-                                                 D->getSpecializedTemplate()));
+  ClassTemplateDecl *ClassTemplate = nullptr;
+
+  if (Importer.ToContext.TheSema) {
+    auto &S = *Importer.ToContext.TheSema;
+    auto lookup = do_lookup(S, D->getName(), getEqualLocalContext(S, D->getDeclContext()));
+    for (auto LD : *lookup) {
+      if (ClassTemplate = dyn_cast<ClassTemplateDecl>(LD))
+        break;
+    }
+    if (ClassTemplate) {
+        auto &ForeignArgs = D->getTemplateInstantiationArgs();
+        llvm::SmallVector<TemplateArgument, 4> Args;
+
+        for (const TemplateArgument& T : ForeignArgs.asArray()) {
+           QualType OurType = Importer.Import(T.getAsType());
+           Args.push_back(TemplateArgument(OurType));
+        }
+
+        // Find the class template specialization declaration that
+        // corresponds to these arguments.
+        void *InsertPos = nullptr;
+        ClassTemplateSpecializationDecl *Decl
+          = ClassTemplate->findSpecialization(Args, InsertPos);
+        if (!Decl) {
+          // This is the first time we have referenced this class template
+          // specialization. Create the canonical declaration and add it to
+          // the set of specializations.
+          Decl = ClassTemplateSpecializationDecl::Create(Importer.ToContext,
+                                ClassTemplate->getTemplatedDecl()->getTagKind(),
+                                                    ClassTemplate->getDeclContext(),
+                                ClassTemplate->getTemplatedDecl()->getLocStart(),
+                                                    ClassTemplate->getLocation(),
+                                                         ClassTemplate,
+                                                         Args, nullptr);
+          ClassTemplate->AddSpecialization(Decl, InsertPos);
+          if (ClassTemplate->isOutOfLine())
+            Decl->setLexicalDeclContext(ClassTemplate->getLexicalDeclContext());
+        }
+        if (Decl) {
+          return Decl;
+        }
+
+        /*if (Decl->getSpecializationKind() == TSK_Undeclared) {
+          MultiLevelTemplateArgumentList TemplateArgLists;
+          TemplateArgLists.addOuterTemplateArguments(Args);
+          S.InstantiateAttrsForDecl(TemplateArgLists, ClassTemplate->getTemplatedDecl(),
+                                  Decl);
+        } */
+    }
+  }
+  if (ClassTemplate == nullptr) {
+    ClassTemplate = cast_or_null<ClassTemplateDecl>(Importer.Import(
+                                                   D->getSpecializedTemplate()));
+  }
+
   if (!ClassTemplate)
     return nullptr;
 
@@ -6998,6 +7115,11 @@ Decl *ASTImporter::Import(Decl *FromD) {
   if (!FromD)
     return nullptr;
 
+  if (NamedDecl *ND = dyn_cast<NamedDecl>(FromD)) {
+      if (ND->getNameAsString() == "operator->") {
+        //foo
+      }
+  }
   ASTNodeImporter Importer(*this);
 
   // Check whether we've already imported this declaration.

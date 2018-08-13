@@ -111,6 +111,7 @@ class ObjCProtocolDecl;
 class ObjCTypeParamDecl;
 class Preprocessor;
 class Stmt;
+class Sema;
 class StoredDeclsMap;
 class TemplateDecl;
 class TemplateParameterList;
@@ -548,6 +549,8 @@ public:
   mutable DeclarationNameTable DeclarationNames;
   IntrusiveRefCntPtr<ExternalASTSource> ExternalSource;
   ASTMutationListener *Listener = nullptr;
+  // Someone will murder me for this...
+  Sema *TheSema = nullptr;
 
   /// Contains parents of a node.
   using ParentVector = llvm::SmallVector<ast_type_traits::DynTypedNode, 2>;
