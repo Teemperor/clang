@@ -196,6 +196,10 @@ std::unique_ptr<CompilerInstance> BuildCompilerInstance() {
   Inv->getLangOpts()->DollarIdents = true;
   // Needed for testing dynamic_cast.
   Inv->getLangOpts()->RTTI = true;
+
+  Inv->getLangOpts()->Exceptions = true;
+  Inv->getLangOpts()->CXXExceptions = true;
+
   Inv->getCodeGenOpts().setDebugInfo(codegenoptions::FullDebugInfo);
   Inv->getTargetOpts().Triple = llvm::sys::getDefaultTargetTriple();
 
