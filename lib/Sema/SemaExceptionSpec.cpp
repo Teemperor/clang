@@ -236,6 +236,7 @@ static bool CheckEquivalentExceptionSpecImpl(
     const FunctionProtoType *New, SourceLocation NewLoc,
     bool *MissingExceptionSpecification = nullptr,
     bool *MissingEmptyExceptionSpecification = nullptr,
+    bool *ExtraEmptyExceptionSpecification = nullptr,
     bool AllowNoexceptAllMatchWithNoSpec = false, bool IsOperatorNew = false);
 
 /// Determine whether a function has an implicitly-generated exception
@@ -259,6 +260,15 @@ static bool hasImplicitExceptionSpec(FunctionDecl *Decl) {
   return !Ty->hasExceptionSpec();
 }
 
+/// Returns true if the given function is a function/builtin with C linkage
+/// and from a system header.
+static bool isCSystemFuncOrBuiltin(FunctionDecl *D, ASTContext &Context) {
+  return (D->getLocation().isInvalid() ||
+          Context.getSourceManager().isInSystemHeader(D->getLocation()) ||
+          D->getBuiltinID()) &&
+         D->isExternC();
+}
+
 bool Sema::CheckEquivalentExceptionSpec(FunctionDecl *Old, FunctionDecl *New) {
   // Just completely ignore this under -fno-exceptions prior to C++17.
   // In C++17 onwards, the exception specification is part of the type and
@@ -270,6 +280,14 @@ bool Sema::CheckEquivalentExceptionSpec(FunctionDecl *Old, FunctionDecl *New) {
   bool IsOperatorNew = OO == OO_New || OO == OO_Array_New;
   bool MissingExceptionSpecification = false;
   bool MissingEmptyExceptionSpecification = false;
+  bool ExtraEmptyExceptionSpecification = false;
+  bool *AllowExtraEmptyExceptionSpecification = nullptr;
+
+  // If both functions are from C functions from system headers, we want to
+  // know if the redeclaration has an additional empty exception specification.
+  if (isCSystemFuncOrBuiltin(Old, Context) &&
+      isCSystemFuncOrBuiltin(New, Context))
+    AllowExtraEmptyExceptionSpecification = &ExtraEmptyExceptionSpecification;
 
   unsigned DiagID = diag::err_mismatched_exception_spec;
   bool ReturnValueOnError = true;
@@ -285,6 +303,7 @@ bool Sema::CheckEquivalentExceptionSpec(FunctionDecl *Old, FunctionDecl *New) {
         Old->getType()->getAs<FunctionProtoType>(), Old->getLocation(),
         New->getType()->getAs<FunctionProtoType>(), New->getLocation(),
         &MissingExceptionSpecification, &MissingEmptyExceptionSpecification,
+        AllowExtraEmptyExceptionSpecification,
         /*AllowNoexceptAllMatchWithNoSpec=*/true, IsOperatorNew)) {
     // C++11 [except.spec]p4 [DR1492]:
     //   If a declaration of a function has an implicit
@@ -300,13 +319,26 @@ bool Sema::CheckEquivalentExceptionSpec(FunctionDecl *Old, FunctionDecl *New) {
     return false;
   }
 
+  const FunctionProtoType *NewProto =
+      New->getType()->castAs<FunctionProtoType>();
+  const FunctionProtoType *OldProto =
+      Old->getType()->castAs<FunctionProtoType>();
+
+  // We know that both decls have C linkage, are from a system header and that
+  // the "new" decl has an extra empty exception specification "throw()". In
+  // this case we don't emit an error but instead update the previous
+  // declaration with the exception specification from the "new" decl. This is
+  // usually not permitted, but it's a necessary hack required for the
+  // redeclarations of free/malloc in mm_malloc.h.
+  if (ExtraEmptyExceptionSpecification && OldProto && NewProto) {
+    UpdateExceptionSpec(Old, NewProto->getExtProtoInfo().ExceptionSpec);
+    return false;
+  }
+
   // The failure was something other than an missing exception
   // specification; return an error, except in MS mode where this is a warning.
   if (!MissingExceptionSpecification)
     return ReturnValueOnError;
-
-  const FunctionProtoType *NewProto =
-    New->getType()->castAs<FunctionProtoType>();
 
   // The new function declaration is only missing an empty exception
   // specification "throw()". If the throw() specification came from a
@@ -317,18 +349,12 @@ bool Sema::CheckEquivalentExceptionSpec(FunctionDecl *Old, FunctionDecl *New) {
   //
   // Likewise if the old function is a builtin.
   if (MissingEmptyExceptionSpecification && NewProto &&
-      (Old->getLocation().isInvalid() ||
-       Context.getSourceManager().isInSystemHeader(Old->getLocation()) ||
-       Old->getBuiltinID()) &&
-      Old->isExternC()) {
+      isCSystemFuncOrBuiltin(Old, Context)) {
     New->setType(Context.getFunctionType(
         NewProto->getReturnType(), NewProto->getParamTypes(),
         NewProto->getExtProtoInfo().withExceptionSpec(EST_DynamicNone)));
     return false;
   }
-
-  const FunctionProtoType *OldProto =
-    Old->getType()->castAs<FunctionProtoType>();
 
   FunctionProtoType::ExceptionSpecInfo ESI = OldProto->getExceptionSpecType();
   if (ESI.Type == EST_Dynamic) {
@@ -469,12 +495,16 @@ static bool CheckEquivalentExceptionSpecImpl(
     const FunctionProtoType *New, SourceLocation NewLoc,
     bool *MissingExceptionSpecification,
     bool *MissingEmptyExceptionSpecification,
+    bool *ExtraEmptyExceptionSpecification,
     bool AllowNoexceptAllMatchWithNoSpec, bool IsOperatorNew) {
   if (MissingExceptionSpecification)
     *MissingExceptionSpecification = false;
 
   if (MissingEmptyExceptionSpecification)
     *MissingEmptyExceptionSpecification = false;
+
+  if (ExtraEmptyExceptionSpecification)
+    *ExtraEmptyExceptionSpecification = false;
 
   Old = S.ResolveExceptionSpec(NewLoc, Old);
   if (!Old)
@@ -588,6 +618,12 @@ static bool CheckEquivalentExceptionSpecImpl(
         }
       }
     }
+  }
+
+  if (ExtraEmptyExceptionSpecification && !Old->hasExceptionSpec() &&
+      New->hasExceptionSpec()) {
+    *ExtraEmptyExceptionSpecification = true;
+    return true;
   }
 
   // If the caller wants to handle the case that the new function is

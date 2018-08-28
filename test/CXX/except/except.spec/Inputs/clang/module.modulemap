@@ -1,0 +1,4 @@
+module builtin [system] {
+  header "mm_malloc.h"
+  export *
+}
