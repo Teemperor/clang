@@ -83,8 +83,9 @@ void CloneChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
 
   Detector.findClones(
       AllCloneGroups, FilenamePatternConstraint(IgnoredFilesPattern),
-      RecursiveCloneTypeIIHashConstraint(), MinGroupSizeConstraint(2),
-      MinComplexityConstraint(MinComplexity),
+      RecursiveCloneTypeIIHashConstraint(),
+      MinGroupSizeConstraint(2), MinComplexityConstraint(MinComplexity),
+      NoOverlappingCloneConstraint(),
       RecursiveCloneTypeIIVerifyConstraint(), OnlyLargestCloneConstraint());
 
   if (ReportSuspiciousClones)

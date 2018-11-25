@@ -56,6 +56,23 @@ bool StmtSequence::contains(const StmtSequence &Other) const {
   return EndIsInBounds;
 }
 
+bool StmtSequence::overlaps(const StmtSequence &Other) const {
+  // If both sequences reside in different declarations, they can never contain
+  // each other.
+  if (S != Other.S)
+    return false;
+
+  if (EndIndex == 0 || Other.EndIndex == 0)
+    return false;
+
+  if (StartIndex >= Other.StartIndex && StartIndex < Other.EndIndex)
+    return true;
+  if (EndIndex > Other.StartIndex && EndIndex <= Other.EndIndex)
+    return true;
+
+  return false;
+}
+
 StmtSequence::iterator StmtSequence::begin() const {
   if (!holdsSequence()) {
     return &S;
@@ -141,6 +158,39 @@ void OnlyLargestCloneConstraint::constrain(
         IndexesToRemove.push_back(i);
         break;
       }
+    }
+  }
+
+  // Erasing a list of indexes from the vector should be done with decreasing
+  // indexes. As IndexesToRemove is constructed with increasing values, we just
+  // reverse iterate over it to get the desired order.
+  for (auto I = IndexesToRemove.rbegin(); I != IndexesToRemove.rend(); ++I) {
+    Result.erase(Result.begin() + *I);
+  }
+}
+
+static bool hasOverlappingClones(CloneDetector::CloneGroup &Group) {
+  for (const StmtSequence &S1 : Group) {
+    for (const StmtSequence &S2 : Group) {
+      if (&S1 != &S2 && S1.overlaps(S2)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+void NoOverlappingCloneConstraint::constrain(
+    std::vector<CloneDetector::CloneGroup> &Result) {
+  std::vector<size_t> IndexesToRemove;
+
+  // Compare every group in the result with the rest. If one groups contains
+  // another group, we only need to return the bigger group.
+  // Note: This doesn't scale well, so if possible avoid calling any heavy
+  // function from this loop to minimize the performance impact.
+  for (size_t i = 0; i < Result.size(); ++i) {
+    if (hasOverlappingClones(Result[i])) {
+      IndexesToRemove.push_back(i);
     }
   }
 

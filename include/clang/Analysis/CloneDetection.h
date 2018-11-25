@@ -143,12 +143,18 @@ public:
            std::tie(Other.S, Other.StartIndex, Other.EndIndex);
   }
 
+  unsigned getInternalStartIndex() const {
+    return StartIndex;
+  }
+
   /// Returns true if and only if this sequence covers a source range that
   /// contains the source range of the given sequence \p Other.
   ///
   /// This method should only be called on a non-empty StmtSequence object
   /// and passed a non-empty StmtSequence object.
   bool contains(const StmtSequence &Other) const;
+
+  bool overlaps(const StmtSequence &Other) const;
 };
 
 /// Searches for similar subtrees in the AST.
@@ -328,6 +334,11 @@ public:
 
 /// Ensures that no clone group fully contains another clone group.
 struct OnlyLargestCloneConstraint {
+  void constrain(std::vector<CloneDetector::CloneGroup> &Result);
+};
+
+/// Ensures that no clone group fully contains another clone group.
+struct NoOverlappingCloneConstraint {
   void constrain(std::vector<CloneDetector::CloneGroup> &Result);
 };
 
