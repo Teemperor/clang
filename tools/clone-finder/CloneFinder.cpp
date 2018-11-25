@@ -52,7 +52,7 @@ void printLines(std::string str, unsigned start, unsigned stop) {
   std::stringstream ss(str);
   std::string line;
   unsigned index = 0;
-  while(std::getline(ss,line,'\n')){
+  while(std::getline(ss, line, '\n')){
     index++;
     if (index >= start && index <= stop)
       std::cout << line << '\n';
@@ -93,7 +93,9 @@ static unsigned MinComplexity = 100;
 struct ImportantDeclVisitor : RecursiveASTVisitor<ImportantDeclVisitor> {
   std::unordered_set<std::string> Decls;
   ParseJob Job;
-  std::vector<HashWithID> AllHashes;
+  std::vector<HashWithID>& AllHashes;
+  ImportantDeclVisitor(std::vector<HashWithID>& Hashes) : AllHashes(Hashes) {
+  }
 
   bool VisitFunctionDecl(FunctionDecl *D) {
     if (!D->hasBody())
@@ -155,7 +157,7 @@ std::string getSourceCode(const std::string &Path) {
   return Code;
 }
 
-void scanFileSet(std::set<size_t> FileIndexSet) {
+static void scanFileSet(std::set<size_t> FileIndexSet) {
   std::vector<clang::CloneDetector::CloneGroup> CloneGroups;
 
   clang::CloneDetector Detector;
@@ -177,6 +179,7 @@ void scanFileSet(std::set<size_t> FileIndexSet) {
       CloneGroups, RecursiveCloneTypeIIHashConstraint(),
       MinGroupSizeConstraint(2), MinComplexityConstraint(MinComplexity),
       //RecursiveCloneTypeIIVerifyConstraint(),
+      NoOverlappingCloneConstraint(),
       OnlyLargestCloneConstraint());
 
   std::cout << "Found " << CloneGroups.size() << " clones" << std::endl;
@@ -184,12 +187,15 @@ void scanFileSet(std::set<size_t> FileIndexSet) {
   for (auto&CloneGroup : CloneGroups) {
     std::cout << "GROUP:" << "\n";
     for (auto &Clone : CloneGroup) {
-      unsigned StartLine = Clone.getASTContext().getSourceManager().getSpellingLineNumber(Clone.front()->getBeginLoc());
-      unsigned EndLine = Clone.getASTContext().getSourceManager().getSpellingLineNumber(Clone.back()->getEndLoc());
-      std::cout << "File: " << Clone.getASTContext().getSourceManager().getFilename(Clone.front()->getBeginLoc()).str();
+      auto &SM = Clone.getASTContext().getSourceManager();
+      unsigned StartLine = SM.getSpellingLineNumber(Clone.front()->getBeginLoc());
+      unsigned EndLine = SM.getSpellingLineNumber(Clone.back()->getEndLoc());
+      std::string File = SM.getFilename(Clone.front()->getBeginLoc()).str();
+      std::cout << "File: " << File;
       std::cout << ":" << StartLine;
       std::cout << "->"<< EndLine;
       std::cout << "\n";
+      printLines(getSourceCode(File), StartLine, EndLine);
      // printLines(*ASTToCode[&Clone.getASTContext()], StartLine, EndLine);
     }
   }
@@ -213,7 +219,8 @@ int main(int argc, const char **argv) {
   }
 
   unsigned done = 0;
-  unsigned limit = 40;
+  size_t limit = 7000;
+  const unsigned NumberOfThreads = 6;
   std::mutex lock;
 
   std::vector<std::thread *> Threads;
@@ -241,10 +248,12 @@ int main(int argc, const char **argv) {
       Jobs.push_back({CC1, FileList.size()});
       FileList.push_back({CC1});
   }
+  limit = std::min(Jobs.size(), limit);
 
-  ImportantDeclVisitor Visitor;
+  std::vector<HashWithID> AllHashes;
+  ImportantDeclVisitor Visitor(AllHashes);
 
-  for (unsigned i = 1; i <= 7; i++) {
+  for (unsigned i = 1; i <= NumberOfThreads; i++) {
       auto t = new std::thread([i, &Jobs, &lock, &Visitor, limit]() {
           while (true) {
             ParseJob Job;
@@ -279,20 +288,20 @@ int main(int argc, const char **argv) {
     delete Threads[i];
   }
 
-  std::stable_sort(Visitor.AllHashes.begin(), Visitor.AllHashes.end(),
+  std::stable_sort(AllHashes.begin(), AllHashes.end(),
                    [](const HashWithID& A, const HashWithID &B){
     return A.Hash < B.Hash;
   });
 
   std::cout << "Scanning..." << std::endl;
 
-  if (Visitor.AllHashes.size() == 0) {
+  if (AllHashes.size() == 0) {
     std::cout << "No hashes found?" << std::endl;
     return 1;
   }
 
-  for (unsigned i = 0; i < Visitor.AllHashes.size() - 1; ++i) {
-    const auto Current = Visitor.AllHashes[i];
+  for (unsigned i = 0; i < AllHashes.size() - 1; ++i) {
+    const auto Current = AllHashes[i];
 
     // It's likely that we just found a sequence of StmtSequences that
     // represent a CloneGroup, so we create a new group and start checking and
@@ -302,15 +311,15 @@ int main(int argc, const char **argv) {
     size_t PrototypeHash = Current.Hash;
 
     size_t StartI = i;
-    for (; i < Visitor.AllHashes.size(); ++i) {
+    for (; i < AllHashes.size(); ++i) {
       // A different hash value means we have reached the end of the sequence.
-      if (PrototypeHash != Visitor.AllHashes[i].Hash) {
+      if (PrototypeHash != AllHashes[i].Hash) {
         --i;
         break;
       }
       // Same hash value means we should add the StmtSequence to the current
       // group.
-      FileIndexSet.insert(Visitor.AllHashes[i].ID);
+      FileIndexSet.insert(AllHashes[i].ID);
     }
 
     if (StartI != i) {
