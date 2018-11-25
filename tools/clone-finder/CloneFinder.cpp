@@ -59,26 +59,141 @@ void printLines(std::string str, unsigned start, unsigned stop) {
   }
 }
 
-struct ImportantDeclVisitor : RecursiveASTVisitor<ImportantDeclVisitor> {
-  CloneDetector* Detector;
-  std::unordered_set<std::string> Decls;
-  bool VisitFunctionDecl(FunctionDecl *D) {
-    if (!D->hasBody())
-      return true;
-    if (!D->getASTContext().getSourceManager().isInMainFile(D->getLocation()))
-      return true;
-    std::string Name = D->getNameAsString();
-    if (Decls.count(Name) != 0)
-      return true;
-    Decls.insert(Name);
-    Detector->analyzeCodeBody(D);
-    return true;
+struct HashWithID {
+  size_t Hash;
+  size_t ID;
+  bool operator<(const HashWithID &O) const {
+    return std::tie(Hash, ID) < std::tie(O.Hash, ID);
   }
 };
 
 struct ParseJob {
   CompileCommand CC;
+  size_t FileIndex;
 };
+
+static std::unordered_set<std::string> HandledFileSets;
+
+static bool ShouldCheckSet(std::set<size_t> FileIndexSet) {
+  std::string Value = "";
+  for (size_t i : FileIndexSet) {
+    Value.append(std::to_string(i));
+    Value.push_back(';');
+  }
+  auto It = HandledFileSets.find(Value);
+  if (It == HandledFileSets.end()) {
+    HandledFileSets.insert(Value);
+    return true;
+  }
+  return false;
+}
+
+static unsigned MinComplexity = 100;
+
+struct ImportantDeclVisitor : RecursiveASTVisitor<ImportantDeclVisitor> {
+  std::unordered_set<std::string> Decls;
+  ParseJob Job;
+  std::vector<HashWithID> AllHashes;
+
+  bool VisitFunctionDecl(FunctionDecl *D) {
+    if (!D->hasBody())
+      return true;
+    if (!D->getASTContext().getSourceManager().isInMainFile(D->getLocation()))
+      return true;
+    std::string Name = D->getQualifiedNameAsString();
+    if (Decls.count(Name) != 0)
+      return true;
+    Decls.insert(Name);
+    RecursiveCloneTypeIIHashConstraint C;
+    std::vector<std::pair<size_t, StmtSequence>> NewHashes;
+    C.saveHash(D->getBody(), D, NewHashes);
+    MinComplexityConstraint MinC(MinComplexity);
+
+    for (auto &Hash : NewHashes) {
+      size_t Compl = MinC.calculateStmtComplexity(Hash.second, MinComplexity);
+      if (Compl >= MinComplexity) {
+        AllHashes.push_back({Hash.first, Job.FileIndex});
+      }
+    }
+    return true;
+  }
+};
+
+struct DeclVisitor2 : RecursiveASTVisitor<DeclVisitor2> {
+  std::unordered_set<std::string> Decls;
+  CloneDetector &Detector;
+  DeclVisitor2(CloneDetector &D) : Detector(D) {}
+
+  bool VisitFunctionDecl(FunctionDecl *D) {
+    if (!D->hasBody())
+      return true;
+    if (!D->getASTContext().getSourceManager().isInMainFile(D->getLocation()))
+      return true;
+    std::string Name = D->getQualifiedNameAsString();
+    if (Decls.count(Name) != 0)
+      return true;
+    Decls.insert(Name);
+
+    Detector.analyzeCodeBody(D);
+
+    return true;
+  }
+};
+
+struct SourceFile {
+  CompileCommand CC;
+};
+std::vector<SourceFile> FileList;
+
+std::string getSourceCode(const std::string &Path) {
+  std::ifstream codeFile(Path);
+  codeFile.seekg(0, std::ios::end);
+  auto size = codeFile.tellg();
+  std::string Code(static_cast<size_t>(size), '\0');
+  codeFile.seekg(0);
+  codeFile.read(&Code[0], size);
+  return Code;
+}
+
+void scanFileSet(std::set<size_t> FileIndexSet) {
+  std::vector<clang::CloneDetector::CloneGroup> CloneGroups;
+
+  clang::CloneDetector Detector;
+
+  DeclVisitor2 Visitor(Detector);
+
+  std::list<std::unique_ptr<ASTUnit> > Units;
+  for (size_t ID : FileIndexSet) {
+    auto CC = FileList.at(ID).CC;
+    std::string *Code = new std::string(getSourceCode(CC.Filename));
+
+    std::unique_ptr<ASTUnit> ASTUnit =
+        clang::tooling::buildASTFromCodeWithArgs(*Code, CC.CommandLine, CC.Filename, "clone-finder");
+    Visitor.TraverseTranslationUnitDecl(ASTUnit->getASTContext().getTranslationUnitDecl());
+    Units.push_back(std::move(ASTUnit));
+  }
+
+  Detector.findClones(
+      CloneGroups, RecursiveCloneTypeIIHashConstraint(),
+      MinGroupSizeConstraint(2), MinComplexityConstraint(MinComplexity),
+      //RecursiveCloneTypeIIVerifyConstraint(),
+      OnlyLargestCloneConstraint());
+
+  std::cout << "Found " << CloneGroups.size() << " clones" << std::endl;
+
+  for (auto&CloneGroup : CloneGroups) {
+    std::cout << "GROUP:" << "\n";
+    for (auto &Clone : CloneGroup) {
+      unsigned StartLine = Clone.getASTContext().getSourceManager().getSpellingLineNumber(Clone.front()->getBeginLoc());
+      unsigned EndLine = Clone.getASTContext().getSourceManager().getSpellingLineNumber(Clone.back()->getEndLoc());
+      std::cout << "File: " << Clone.getASTContext().getSourceManager().getFilename(Clone.front()->getBeginLoc()).str();
+      std::cout << ":" << StartLine;
+      std::cout << "->"<< EndLine;
+      std::cout << "\n";
+     // printLines(*ASTToCode[&Clone.getASTContext()], StartLine, EndLine);
+    }
+  }
+}
 
 int main(int argc, const char **argv) {
   llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
@@ -97,13 +212,8 @@ int main(int argc, const char **argv) {
     return 1;
   }
 
-  clang::CloneDetector Detector;
-
-
   unsigned done = 0;
-  unsigned limit = 100;
-  std::vector<std::string *> SourceCode;
-  std::map<ASTContext *, std::string *> ASTToCode;
+  unsigned limit = 40;
   std::mutex lock;
 
   std::vector<std::thread *> Threads;
@@ -114,61 +224,50 @@ int main(int argc, const char **argv) {
       done++;
       if (done > limit)
         break;
-      Jobs.push_back({CC1});
+
+      CC1.CommandLine.pop_back();
+
+      auto &v = CC1.CommandLine;
+      auto itr = std::find(v.begin(), v.end(), "-Wunused-command-line-argument");
+      if (itr != v.end()) v.erase(itr);
+
+
+      CC1.CommandLine.push_back("-Wno-unused-command-line-argument");
+      CC1.CommandLine.push_back("-I");
+      CC1.CommandLine.push_back("/home/teemperor/llvm/rel-build/lib/clang/8.0.0/include/");
+      CC1.CommandLine.push_back("-resource-dir");
+      CC1.CommandLine.push_back("/home/teemperor/llvm/rel-build/lib/clang/8.0.0/");
+
+      Jobs.push_back({CC1, FileList.size()});
+      FileList.push_back({CC1});
   }
 
+  ImportantDeclVisitor Visitor;
+
   for (unsigned i = 1; i <= 7; i++) {
-      auto t = new std::thread([i, &Jobs, &Detector, &SourceCode, &ASTToCode, &lock, limit]() {
+      auto t = new std::thread([i, &Jobs, &lock, &Visitor, limit]() {
           while (true) {
-
-            ParseJob job;
-
+            ParseJob Job;
             {
               std::lock_guard<std::mutex> guard(lock);
               if (Jobs.empty())
                 break;
 
-              job = Jobs.front();
+              Job = Jobs.front();
               Jobs.pop_front();
-              std::cout << "T" << i << " [" << (limit - Jobs.size()) << "/" << limit << "] " << job.CC.Filename << std::endl;
+              std::cout << "T" << i << " [" << (limit - Jobs.size()) << "/" << limit << "] " << Job.CC.Filename << std::endl;
             }
 
-            CompileCommand CC = job.CC;
+            CompileCommand CC = Job.CC;
 
-            ImportantDeclVisitor Visitor;
-            Visitor.Detector = &Detector;
-
-            CC.CommandLine.pop_back();
-
-            std::ifstream codeFile(CC.Filename);
-            codeFile.seekg(0, std::ios::end);
-            auto size = codeFile.tellg();
-            std::string *Code = new std::string(size, '\0');
-            codeFile.seekg(0);
-            codeFile.read(&(*Code)[0], size);
-
-            //CC.CommandLine.push_back("-I");
-            //CC.CommandLine.push_back("/home/teemperor/clones/rel/lib/clang/5.0.0/include/");
-            CC.CommandLine.push_back("-resource-dir");
-            CC.CommandLine.push_back("/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/9.1.0");
-            CC.CommandLine.push_back("-isysroot");
-            CC.CommandLine.push_back("/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.13.sdk");
-            CC.CommandLine.push_back("-I/usr/local/include");
-            CC.CommandLine.push_back("-stdlib=libc++");
-            CC.CommandLine.push_back("-Wno-unused-command-line-argument");
-
-            auto &v = CC.CommandLine;
-            auto itr = std::find(v.begin(), v.end(), "-Wunused-command-line-argument");
-            if (itr != v.end()) v.erase(itr);
+            std::string Code = getSourceCode(CC.Filename);
 
             std::unique_ptr<ASTUnit> ASTUnit =
-                clang::tooling::buildASTFromCodeWithArgs(*Code, CC.CommandLine, CC.Filename, "clone-finder");
+                clang::tooling::buildASTFromCodeWithArgs(Code, CC.CommandLine, CC.Filename, "clone-finder");
             {
               std::lock_guard<std::mutex> guard(lock);
-              SourceCode.push_back(Code);
-              ASTToCode[&ASTUnit->getASTContext()] = Code;
+              Visitor.Job = Job;
               Visitor.TraverseTranslationUnitDecl(ASTUnit->getASTContext().getTranslationUnitDecl());
-              ASTUnit.release();
             }
           }
       });
@@ -180,35 +279,43 @@ int main(int argc, const char **argv) {
     delete Threads[i];
   }
 
+  std::stable_sort(Visitor.AllHashes.begin(), Visitor.AllHashes.end(),
+                   [](const HashWithID& A, const HashWithID &B){
+    return A.Hash < B.Hash;
+  });
+
   std::cout << "Scanning..." << std::endl;
 
-  std::vector<CloneDetector::CloneGroup> AllCloneGroups;
-
-  Detector.findClones(
-      AllCloneGroups, RecursiveCloneTypeIIHashConstraint(),
-      MinGroupSizeConstraint(2), MinComplexityConstraint(100),
-      //RecursiveCloneTypeIIVerifyConstraint(),
-        OnlyLargestCloneConstraint());
-
-  std::cout << "Found " << AllCloneGroups.size() << " clones" << std::endl;
-
-  for (auto&CloneGroup : AllCloneGroups) {
-    std::cout << "GROUP:" << "\n";
-    for (auto &Clone : CloneGroup) {
-      unsigned StartLine = Clone.getASTContext().getSourceManager().getSpellingLineNumber(Clone.front()->getLocStart());
-      unsigned EndLine = Clone.getASTContext().getSourceManager().getSpellingLineNumber(Clone.back()->getLocEnd());
-      std::cout << "File: " << Clone.getASTContext().getSourceManager().getFilename(Clone.front()->getLocStart()).str();
-      std::cout << ":" << StartLine;
-      std::cout << "->"<< EndLine;
-      std::cout << "\n";
-     // printLines(*ASTToCode[&Clone.getASTContext()], StartLine, EndLine);
-    }
+  if (Visitor.AllHashes.size() == 0) {
+    std::cout << "No hashes found?" << std::endl;
+    return 1;
   }
 
-  // Now that the suspicious clone detector has checked for pattern errors,
-  // we also filter all clones who don't have matching patterns
-  //CloneDetector::constrainClones(AllCloneGroups,
-  //                               MatchingVariablePatternConstraint(),
-  //                               MinGroupSizeConstraint(2));
+  for (unsigned i = 0; i < Visitor.AllHashes.size() - 1; ++i) {
+    const auto Current = Visitor.AllHashes[i];
 
+    // It's likely that we just found a sequence of StmtSequences that
+    // represent a CloneGroup, so we create a new group and start checking and
+    // adding the StmtSequences in this sequence.
+    std::set<size_t> FileIndexSet;
+
+    size_t PrototypeHash = Current.Hash;
+
+    size_t StartI = i;
+    for (; i < Visitor.AllHashes.size(); ++i) {
+      // A different hash value means we have reached the end of the sequence.
+      if (PrototypeHash != Visitor.AllHashes[i].Hash) {
+        --i;
+        break;
+      }
+      // Same hash value means we should add the StmtSequence to the current
+      // group.
+      FileIndexSet.insert(Visitor.AllHashes[i].ID);
+    }
+
+    if (StartI != i) {
+      if (ShouldCheckSet(FileIndexSet))
+        scanFileSet(FileIndexSet);
+    }
+  }
 }
