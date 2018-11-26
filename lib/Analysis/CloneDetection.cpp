@@ -140,6 +140,36 @@ static bool containsGroup(CloneDetector::CloneGroup &Group,
   return true;
 }
 
+void StmtFilterConstraint::constrain(std::vector<CloneDetector::CloneGroup> &Result) {
+  std::vector<unsigned> IndexesToRemove;
+
+  // Compare every group in the result with the rest. If one groups contains
+  // another group, we only need to return the bigger group.
+  // Note: This doesn't scale well, so if possible avoid calling any heavy
+  // function from this loop to minimize the performance impact.
+  for (unsigned i = 0; i < Result.size(); ++i) {
+    for (const StmtSequence &Seq : Result[i]) {
+      bool FoundFilteredStmt = false;
+      for (const Stmt *S : Seq) {
+        if (S->getStmtClass() == ToFilter) {
+          IndexesToRemove.push_back(i);
+          FoundFilteredStmt = true;
+          break;
+        }
+      }
+      if (FoundFilteredStmt)
+        break;
+    }
+  }
+
+  // Erasing a list of indexes from the vector should be done with decreasing
+  // indexes. As IndexesToRemove is constructed with increasing values, we just
+  // reverse iterate over it to get the desired order.
+  for (auto I = IndexesToRemove.rbegin(); I != IndexesToRemove.rend(); ++I) {
+    Result.erase(Result.begin() + *I);
+  }
+}
+
 void OnlyLargestCloneConstraint::constrain(
     std::vector<CloneDetector::CloneGroup> &Result) {
   std::vector<unsigned> IndexesToRemove;

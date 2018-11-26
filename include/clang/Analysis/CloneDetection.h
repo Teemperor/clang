@@ -316,6 +316,14 @@ public:
   }
 };
 
+class StmtFilterConstraint {
+  clang::Stmt::StmtClass ToFilter;
+public:
+  StmtFilterConstraint(clang::Stmt::StmtClass ToFilter) : ToFilter(ToFilter) {
+  }
+  void constrain(std::vector<CloneDetector::CloneGroup> &Result);
+};
+
 /// Ensures that all clone groups contain at least the given amount of clones.
 class MinGroupSizeConstraint {
   unsigned MinGroupSize;

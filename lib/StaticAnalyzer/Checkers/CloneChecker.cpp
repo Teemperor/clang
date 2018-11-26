@@ -85,7 +85,7 @@ void CloneChecker::checkEndOfTranslationUnit(const TranslationUnitDecl *TU,
       AllCloneGroups, FilenamePatternConstraint(IgnoredFilesPattern),
       RecursiveCloneTypeIIHashConstraint(),
       MinGroupSizeConstraint(2), MinComplexityConstraint(MinComplexity),
-      NoOverlappingCloneConstraint(),
+      NoOverlappingCloneConstraint(), StmtFilterConstraint(clang::Stmt::CaseStmtClass),
       RecursiveCloneTypeIIVerifyConstraint(), OnlyLargestCloneConstraint());
 
   if (ReportSuspiciousClones)
