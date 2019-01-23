@@ -24,6 +24,7 @@ add_subdirectory(Tooling)
 add_subdirectory(Format)
 add_subdirectory(Rewrite)
 add_subdirectory(Sema)
+add_subdirectory(Serialization)
 add_subdirectory(CodeGen)
 # FIXME: libclang unit tests are disabled on Windows due
 # to failures, mostly in libclang.VirtualFileOverlay_*.
